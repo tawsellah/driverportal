@@ -46,6 +46,11 @@ export default function CreateTripPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [minCalendarDate, setMinCalendarDate] = useState<Date | null>(null);
+
+  useEffect(() => {
+    setMinCalendarDate(new Date(new Date().setHours(0,0,0,0)));
+  }, []);
 
   const { control, handleSubmit, register, setValue, watch, formState: { errors } } = useForm<TripFormValues>({
     resolver: zodResolver(tripSchema),
@@ -195,7 +200,7 @@ export default function CreateTripPage() {
                         onSelect={field.onChange}
                         initialFocus
                         locale={ar}
-                        disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}
+                        disabled={(date) => minCalendarDate ? date < minCalendarDate : true}
                       />
                     </PopoverContent>
                   </Popover>
@@ -267,3 +272,4 @@ export default function CreateTripPage() {
     </Card>
   );
 }
+
