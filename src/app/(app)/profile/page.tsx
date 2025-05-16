@@ -17,7 +17,7 @@ import { VEHICLE_TYPES, JORDAN_GOVERNORATES } from '@/lib/constants';
 import { format } from 'date-fns';
 import { auth } from '@/lib/firebase';
 import { getUserProfile, updateUserProfile, type UserProfile, simulateCloudinaryUpload } from '@/lib/firebaseService';
-import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox
+import { Checkbox } from "@/components/ui/checkbox";
 
 const profileSchema = z.object({
   fullName: z.string().min(3, "الاسم الكامل مطلوب"),
@@ -25,9 +25,9 @@ const profileSchema = z.object({
   paymentMethods: z.object({
     cash: z.boolean().optional().default(true),
     click: z.boolean().optional().default(false),
-    clickCode: z.string().optional().nullable(), // Allow null
+    clickCode: z.string().optional().nullable(),
   }).optional(),
-  idPhotoUrl: z.string().url().or(z.literal("")).optional().nullable(), // Allow empty string or null
+  idPhotoUrl: z.string().url().or(z.literal("")).optional().nullable(),
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -92,7 +92,8 @@ export default function ProfilePage() {
     
     let updatedPhotoUrl: string | null = userProfile.idPhotoUrl || null;
     if (newPhotoFile) {
-      updatedPhotoUrl = simulateCloudinaryUpload(newPhotoFile.name);
+      // In a real app, upload newPhotoFile to Cloudinary and get the URL
+      updatedPhotoUrl = simulateCloudinaryUpload(newPhotoFile.name); 
     }
 
     const updates: Partial<UserProfile> = {
@@ -101,7 +102,8 @@ export default function ProfilePage() {
       paymentMethods: {
         cash: data.paymentMethods?.cash || false,
         click: data.paymentMethods?.click || false,
-        clickCode: data.paymentMethods?.click ? (data.paymentMethods?.clickCode || '') : '', // Store empty string if click is false
+        // Only save clickCode if click is enabled, otherwise save empty or null
+        clickCode: data.paymentMethods?.click ? (data.paymentMethods?.clickCode || '') : '',
       },
       idPhotoUrl: updatedPhotoUrl,
     };
@@ -150,12 +152,12 @@ export default function ProfilePage() {
           <Avatar className="w-24 h-24 mb-4 border-2 border-primary">
             <AvatarImage 
               src={newPhotoFile ? URL.createObjectURL(newPhotoFile) : userProfile.idPhotoUrl || "https://placehold.co/100x100.png?text=S"} 
-              alt={userProfile.fullName} 
+              alt={userProfile.fullName}
               data-ai-hint="driver portrait" />
             <AvatarFallback>{userProfile.fullName?.charAt(0) || 'S'}</AvatarFallback>
           </Avatar>
           {isEditing && (
-            <div className="mb-2">
+            <div className="mb-2 w-full max-w-xs">
               <Label htmlFor="newIdPhoto">تغيير الصورة الشخصية</Label>
               <Input id="newIdPhoto" type="file" accept="image/*" onChange={handlePhotoChange} />
             </div>
@@ -265,7 +267,7 @@ export default function ProfilePage() {
                 <Label htmlFor="paymentClick" className="font-normal cursor-pointer">CliQ (كليك)</Label>
               </div>
               {paymentMethodsWatched?.click && (
-                <div className="ps-7 pt-2">
+                <div className="ps-7 pt-2"> {/* Indent CliQ code input */}
                   <Label htmlFor="clickCode">معرّف CliQ الخاص بك</Label>
                   <Input 
                     id="clickCode" 
@@ -296,7 +298,7 @@ export default function ProfilePage() {
              <Button onClick={() => { 
                 setIsEditing(false); 
                 setNewPhotoFile(null); 
-                if(userProfile) {
+                if(userProfile) { // Reset form to original profile data
                     reset({ 
                         fullName: userProfile.fullName, 
                         phone: userProfile.phone, 
@@ -314,4 +316,3 @@ export default function ProfilePage() {
   );
 }
 
-    
