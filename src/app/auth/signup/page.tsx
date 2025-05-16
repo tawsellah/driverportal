@@ -27,52 +27,46 @@ import { setAuthStatus } from '@/lib/storage';
 const signUpSchema = z.object({
   // Basic Info
   fullName: z.string().min(3, { message: "الاسم الكامل مطلوب." }),
-  // email: z.string().email({ message: "بريد إلكتروني غير صالح." }), // Email will be constructed
   phone: z.string().regex(/^07[789]\d{7}$/, { message: "رقم هاتف أردني غير صالح (مثال: 0791234567)." }),
   password: z.string().min(6, { message: "كلمة المرور يجب أن تكون 6 أحرف على الأقل." }),
   // Driver Info
   idNumber: z.string().min(10, { message: "رقم الهوية مطلوب." }).max(10, { message: "رقم الهوية يجب أن يكون 10 أرقام." }),
-  idPhoto: z.any().optional(), // File handling is mocked
+  idPhoto: z.any().optional(), 
   licenseNumber: z.string().min(1, { message: "رقم الرخصة مطلوب." }),
   licenseExpiry: z.string().min(1, { message: "تاريخ انتهاء الرخصة مطلوب." }),
-  licensePhoto: z.any().optional(), // File handling is mocked
+  licensePhoto: z.any().optional(), 
   // Vehicle Info
   vehicleType: z.string().min(1, { message: "نوع المركبة مطلوب." }),
   makeModel: z.string().min(1, { message: "الصنع والموديل مطلوب." }),
   year: z.string().min(4, { message: "سنة الصنع مطلوبة (مثال: 2020)." }).max(4),
   color: z.string().min(1, { message: "لون المركبة مطلوب." }),
   plateNumber: z.string().min(1, { message: "رقم اللوحة مطلوب." }),
-  vehiclePhoto: z.any().optional(), // File handling is mocked
+  vehiclePhoto: z.any().optional(), 
 });
 
 type SignUpFormValues = z.infer<typeof signUpSchema>;
 
-// Mock file input that updates a hidden URL field or state
 const FileInput = ({ 
-  label, id, error, setValue, fieldName 
+  label, id, error, setValue, fieldName, register // Added register here
 }: { 
   label: string, id: string, error?: string, 
-  setValue: (name: keyof SignUpFormValues, value: any) => void,
-  fieldName: keyof SignUpFormValues // To know which URL to update
+  setValue: (name: keyof SignUpFormValues, value: any) => void, // Not strictly used if register handles it
+  fieldName: keyof SignUpFormValues,
+  register: any // To pass the register function for the input
 }) => {
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      // In a real app, upload to Cloudinary here and get URL
-      // For mock, simulate and set a placeholder URL
       const mockUrl = simulateCloudinaryUpload(file.name);
-      // This assumes fieldName corresponds to a URL field in the form schema or profile.
-      // We are not directly storing the file object in form state for Firebase.
-      // Instead, we'd store the URL. For this mock, we'll just log it.
       console.log(`Simulated upload for ${fieldName}: ${mockUrl}`);
-      // To actually use this, you'd need hidden fields for URLs or manage URLs in a different state
-      // For now, the schema expects 'any' for photo fields, but Firebase will store URLs.
+      // setValue(fieldName, file); // RHF handles FileList via register
     }
   };
   return (
     <div>
-      <Label htmlFor={id}>{label} <span className="text-destructive">*</span></Label>
-      <Input id={id} type="file" accept="image/*" onChange={handleFileChange} className={error ? 'border-destructive' : ''} />
+      <Label htmlFor={id}>{label} <span className="text-muted-foreground">(اختياري)</span></Label>
+      {/* Use register for the file input */}
+      <Input id={id} type="file" accept="image/*" className={error ? 'border-destructive' : ''} {...register(fieldName)} onChange={handleFileChange} />
       {error && <p className="mt-1 text-sm text-destructive">{error}</p>}
       <p className="mt-1 text-xs text-muted-foreground">ملاحظة: تحميل الملفات هو للعرض والمحاكاة فقط.</p>
     </div>
@@ -80,7 +74,6 @@ const FileInput = ({
 };
 
 
-// Modify IconInput to accept error prop for border styling
 const PatchedIconInput = ({ error, className, ...props }: React.ComponentProps<typeof OriginalIconInputComponent> & { error?: string }) => (
   <OriginalIconInputComponent className={cn(className, error ? 'border-destructive focus:border-destructive focus-visible:ring-destructive' : '')} {...props} />
 );
@@ -115,23 +108,23 @@ export default function SignUpPage() {
           email: constructedEmail,
           phone: data.phone,
           idNumber: data.idNumber,
-          idPhotoUrl: data.idPhoto ? simulateCloudinaryUpload(`${user.uid}_idPhoto.jpg`) : undefined,
+          idPhotoUrl: data.idPhoto && data.idPhoto.length > 0 ? simulateCloudinaryUpload(`${user.uid}_idPhoto.jpg`) : null,
           licenseNumber: data.licenseNumber,
           licenseExpiry: data.licenseExpiry,
-          licensePhotoUrl: data.licensePhoto ? simulateCloudinaryUpload(`${user.uid}_licensePhoto.jpg`) : undefined,
+          licensePhotoUrl: data.licensePhoto && data.licensePhoto.length > 0 ? simulateCloudinaryUpload(`${user.uid}_licensePhoto.jpg`) : null,
           vehicleType: data.vehicleType,
           vehicleMakeModel: data.makeModel,
           vehicleYear: data.year,
           vehicleColor: data.color,
           vehiclePlateNumber: data.plateNumber,
-          vehiclePhotosUrl: data.vehiclePhoto ? simulateCloudinaryUpload(`${user.uid}_vehiclePhoto.jpg`) : undefined,
-          rating: 0, // Default
-          tripsCount: 0, // Default
-          paymentMethods: { cash: true, click: false }, // Default
+          vehiclePhotosUrl: data.vehiclePhoto && data.vehiclePhoto.length > 0 ? simulateCloudinaryUpload(`${user.uid}_vehiclePhoto.jpg`) : null,
+          rating: 0, 
+          tripsCount: 0, 
+          paymentMethods: { cash: true, click: false }, 
         };
 
         await saveUserProfile(user.uid, profileData);
-        setAuthStatus(true); // For client-side navigation
+        setAuthStatus(true); 
 
         toast({
           title: "تم إنشاء الحساب بنجاح!",
@@ -175,17 +168,17 @@ export default function SignUpPage() {
               </AccordionTrigger>
               <AccordionContent className="space-y-4 pt-4">
                 <div>
-                  <Label htmlFor="fullName">الاسم الكامل</Label>
+                  <Label htmlFor="fullName">الاسم الكامل <span className="text-destructive">*</span></Label>
                   <IconInput icon={User} id="fullName" {...register('fullName')} error={errors.fullName?.message} />
                   {errors.fullName && <p className="mt-1 text-sm text-destructive">{errors.fullName.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="phone">رقم الهاتف (سيستخدم للدخول مع t في البداية)</Label>
+                  <Label htmlFor="phone">رقم الهاتف (سيستخدم للدخول مع t في البداية) <span className="text-destructive">*</span></Label>
                   <IconInput icon={Phone} id="phone" type="tel" {...register('phone')} error={errors.phone?.message} />
                   {errors.phone && <p className="mt-1 text-sm text-destructive">{errors.phone.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="password">كلمة المرور</Label>
+                  <Label htmlFor="password">كلمة المرور <span className="text-destructive">*</span></Label>
                   <IconInput icon={Lock} id="password" type="password" {...register('password')} error={errors.password?.message} />
                   {errors.password && <p className="mt-1 text-sm text-destructive">{errors.password.message}</p>}
                 </div>
@@ -199,22 +192,22 @@ export default function SignUpPage() {
               </AccordionTrigger>
               <AccordionContent className="space-y-4 pt-4">
                 <div>
-                  <Label htmlFor="idNumber">رقم الهوية</Label>
+                  <Label htmlFor="idNumber">رقم الهوية <span className="text-destructive">*</span></Label>
                   <IconInput icon={CreditCard} id="idNumber" {...register('idNumber')} error={errors.idNumber?.message} />
                   {errors.idNumber && <p className="mt-1 text-sm text-destructive">{errors.idNumber.message}</p>}
                 </div>
-                <FileInput label="صورة الهوية" id="idPhoto" error={errors.idPhoto?.message as string} setValue={setValue} fieldName="idPhoto" />
+                <FileInput label="صورة الهوية" id="idPhoto" error={errors.idPhoto?.message as string} setValue={setValue} fieldName="idPhoto" register={register} />
                 <div>
-                  <Label htmlFor="licenseNumber">رقم الرخصة</Label>
+                  <Label htmlFor="licenseNumber">رقم الرخصة <span className="text-destructive">*</span></Label>
                   <IconInput icon={CreditCard} id="licenseNumber" {...register('licenseNumber')} error={errors.licenseNumber?.message} />
                   {errors.licenseNumber && <p className="mt-1 text-sm text-destructive">{errors.licenseNumber.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="licenseExpiry">تاريخ انتهاء الرخصة</Label>
+                  <Label htmlFor="licenseExpiry">تاريخ انتهاء الرخصة <span className="text-destructive">*</span></Label>
                   <IconInput icon={CalendarDays} id="licenseExpiry" type="date" {...register('licenseExpiry')} error={errors.licenseExpiry?.message} />
                   {errors.licenseExpiry && <p className="mt-1 text-sm text-destructive">{errors.licenseExpiry.message}</p>}
                 </div>
-                <FileInput label="صورة الرخصة" id="licensePhoto" error={errors.licensePhoto?.message as string} setValue={setValue} fieldName="licensePhoto"/>
+                <FileInput label="صورة الرخصة" id="licensePhoto" error={errors.licensePhoto?.message as string} setValue={setValue} fieldName="licensePhoto" register={register}/>
               </AccordionContent>
             </AccordionItem>
 
@@ -225,7 +218,7 @@ export default function SignUpPage() {
               </AccordionTrigger>
               <AccordionContent className="space-y-4 pt-4">
                  <div>
-                  <Label htmlFor="vehicleType">نوع المركبة</Label>
+                  <Label htmlFor="vehicleType">نوع المركبة <span className="text-destructive">*</span></Label>
                    <Controller
                       control={control}
                       name="vehicleType"
@@ -246,26 +239,26 @@ export default function SignUpPage() {
                   {errors.vehicleType && <p className="mt-1 text-sm text-destructive">{errors.vehicleType.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="makeModel">الصنع والموديل</Label>
+                  <Label htmlFor="makeModel">الصنع والموديل <span className="text-destructive">*</span></Label>
                   <IconInput icon={Car} id="makeModel" {...register('makeModel')} error={errors.makeModel?.message} />
                   {errors.makeModel && <p className="mt-1 text-sm text-destructive">{errors.makeModel.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="year">سنة الصنع</Label>
+                  <Label htmlFor="year">سنة الصنع <span className="text-destructive">*</span></Label>
                   <IconInput icon={CalendarDays} id="year" type="number" placeholder="YYYY" {...register('year')} error={errors.year?.message} />
                   {errors.year && <p className="mt-1 text-sm text-destructive">{errors.year.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="color">اللون</Label>
+                  <Label htmlFor="color">اللون <span className="text-destructive">*</span></Label>
                   <IconInput icon={Palette} id="color" {...register('color')} error={errors.color?.message} />
                   {errors.color && <p className="mt-1 text-sm text-destructive">{errors.color.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="plateNumber">رقم اللوحة</Label>
+                  <Label htmlFor="plateNumber">رقم اللوحة <span className="text-destructive">*</span></Label>
                   <IconInput icon={Hash} id="plateNumber" {...register('plateNumber')} error={errors.plateNumber?.message} />
                   {errors.plateNumber && <p className="mt-1 text-sm text-destructive">{errors.plateNumber.message}</p>}
                 </div>
-                <FileInput label="صورة المركبة" id="vehiclePhoto" error={errors.vehiclePhoto?.message as string} setValue={setValue} fieldName="vehiclePhoto" />
+                <FileInput label="صورة المركبة" id="vehiclePhoto" error={errors.vehiclePhoto?.message as string} setValue={setValue} fieldName="vehiclePhoto" register={register} />
               </AccordionContent>
             </AccordionItem>
           </Accordion>
@@ -291,3 +284,5 @@ export default function SignUpPage() {
     </div>
   );
 }
+
+    
