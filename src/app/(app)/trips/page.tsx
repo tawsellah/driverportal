@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button'; // Added buttonVariants
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Edit3, Trash2, Users, Route, MapPin, CalendarDays, Clock, Armchair, DollarSign, Loader2, AlertTriangle, Ban, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -139,7 +139,7 @@ function TripCard({ trip, onDelete, onEndTrip }: { trip: Trip; onDelete: (tripId
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>تراجع</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleEndTrip} className="bg-green-600 hover:bg-green-700">تأكيد الإنهاء</AlertDialogAction>
+                  <AlertDialogAction onClick={handleEndTrip} className={buttonVariants({variant: "default", className: "bg-green-600 hover:bg-green-700"})}>تأكيد الإنهاء</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -178,17 +178,23 @@ export default function TripsPage() {
   };
 
   useEffect(() => {
-    fetchTripsData();
+    const unsubscribe = auth.onAuthStateChanged(user => {
+      if (user) {
+        fetchTripsData();
+      } else {
+        router.push('/auth/signin');
+      }
+    });
+    return () => unsubscribe();
   }, [router]);
 
   const handleDeleteTrip = async (tripId: string) => {
     try {
       await fbDeleteTrip(tripId); // This now updates status to 'cancelled'
-      // setTrips(prevTrips => prevTrips.filter(trip => trip.id !== tripId));
       fetchTripsData(); // Re-fetch to update list and canCreateTrip state
     } catch (error) {
       console.error("Error cancelling trip:", error);
-      // Handle error (e.g., show toast)
+      toast({title: "خطأ في إلغاء الرحلة", variant: "destructive"});
     }
   };
 
@@ -198,7 +204,7 @@ export default function TripsPage() {
       fetchTripsData(); // Re-fetch to update list and canCreateTrip state
     } catch (error) {
       console.error("Error ending trip:", error);
-      // Handle error (e.g., show toast)
+      toast({title: "خطأ في إنهاء الرحلة", variant: "destructive"});
     }
   };
 
@@ -246,3 +252,4 @@ export default function TripsPage() {
     </div>
   );
 }
+
