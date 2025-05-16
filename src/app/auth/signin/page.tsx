@@ -104,3 +104,6 @@ export default function SignInPage() {
           <ArrowLeft className="me-1 inline-block h-4 w-4" />
         </Link>
       </div>
+    </div>
+  );
+}

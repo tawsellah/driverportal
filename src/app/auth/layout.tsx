@@ -1,6 +1,5 @@
 
 import type { ReactNode } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 
@@ -20,3 +19,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       </main>
       <footer className="p-4 text-center text-sm text-muted-foreground">
         © {new Date().getFullYear()} توصيلة. جميع الحقوق محفوظة.
+      </footer>
+    </div>
+  );
+}
