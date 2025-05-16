@@ -16,10 +16,11 @@ export function ThemeToggle() {
 
   if (!mounted) {
     // Render a placeholder or null until mounted to avoid hydration mismatch
+    // Also, ensure the button here is self-closing or properly closed if it had children.
     return <Button variant="outline" size="icon" className="h-10 w-10 rounded-full" disabled />;
   }
 
-  const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const isDark = theme === "dark" || (theme === "system" && typeof window !== 'undefined' && window.matchMedia("(prefers-color-scheme: dark)").matches);
 
   return (
     <Button
@@ -32,4 +33,8 @@ export function ThemeToggle() {
       {isDark ? (
         <Sun className="h-[1.2rem] w-[1.2rem]" />
       ) : (
-        <Moon className="h-[1
+        <Moon className="h-[1.2rem] w-[1.2rem]" />
+      )}
+    </Button>
+  );
+}
