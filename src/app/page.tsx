@@ -1,23 +1,29 @@
+
 "use client";
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
+import { onAuthUserChanged } from '@/lib/firebaseService'; // Using Firebase auth state
 
 export default function HomePage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate auth check from localStorage
-    const isLoggedIn = localStorage.getItem('tawsellah-isLoggedIn') === 'true';
-    if (isLoggedIn) {
-      router.replace('/trips');
-    } else {
-      router.replace('/auth/signin');
-    }
-    // Intentionally not setting setIsLoading to false here to let the redirect complete.
-    // If direct rendering is needed, then setIsLoading(false) would be appropriate.
+    const unsubscribe = onAuthUserChanged((user) => {
+      if (user) {
+        // User is signed in, redirect to trips page.
+        router.replace('/trips');
+      } else {
+        // User is signed out, redirect to signin page.
+        router.replace('/auth/signin');
+      }
+      // setIsLoading(false); // Keep loading until redirect is complete
+    });
+
+    // Cleanup subscription on unmount
+    return () => unsubscribe();
   }, [router]);
 
   return (

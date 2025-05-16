@@ -1,18 +1,18 @@
 
 "use client";
 
-import type { SeatID } from '@/lib/constants';
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertTriangle, Briefcase, CalendarDays, Clock, DollarSign, Download, Filter, MapPin, Route, Users, Armchair, ListChecks } from 'lucide-react';
-import type { Trip } from '@/lib/storage';
-import { getTrips, initializeMockData } from '@/lib/storage';
+import { AlertTriangle, Briefcase, CalendarDays, Clock, DollarSign, Download, Filter, MapPin, Route, Users, Armchair, ListChecks, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { JORDAN_GOVERNORATES } from '@/lib/constants';
+import { auth } from '@/lib/firebase';
+import { getCompletedTripsForDriver, type Trip } from '@/lib/firebaseService';
+import { useRouter } from 'next/navigation';
+
 
 function CompletedTripCard({ trip }: { trip: Trip }) {
   const { toast } = useToast();
@@ -26,13 +26,13 @@ function CompletedTripCard({ trip }: { trip: Trip }) {
     </svg>
   );
 
-
   return (
     <Card className="mb-4 shadow-md">
       <CardHeader>
         <CardTitle className="flex items-center text-lg">
           <Route className="ms-2 h-5 w-5 text-primary" />
           {startPointName} <ArrowLeftShort className="mx-1"/> {destinationName}
+          {trip.status === 'cancelled' && <span className="me-auto text-sm font-medium bg-red-100 text-red-700 px-2 py-1 rounded-full">ملغاة</span>}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
@@ -60,10 +60,16 @@ function CompletedTripCard({ trip }: { trip: Trip }) {
           <DollarSign className="ms-2 h-4 w-4 text-green-600" />
           السعر للراكب: {trip.pricePerPassenger} د.أ
         </div>
-        {trip.earnings !== undefined && (
+        {trip.status === 'completed' && trip.earnings !== undefined && (
           <div className="flex items-center font-semibold">
             <DollarSign className="ms-2 h-4 w-4 text-green-600" />
-            الأرباح من هذه الرحلة: {trip.earnings} د.أ
+            الأرباح من هذه الرحلة: {trip.earnings.toFixed(2)} د.أ
+          </div>
+        )}
+         {trip.status === 'cancelled' && (
+          <div className="flex items-center font-semibold text-red-600">
+            <AlertTriangle className="ms-2 h-4 w-4" />
+            تم إلغاء هذه الرحلة.
           </div>
         )}
       </CardContent>
@@ -80,20 +86,31 @@ export default function HistoryPage() {
   const [completedTrips, setCompletedTrips] = useState<Trip[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
+  const router = useRouter();
 
   useEffect(() => {
-    initializeMockData(); // Ensure mock data is there
-    const allTrips = getTrips();
-    setCompletedTrips(allTrips.filter(trip => trip.status === 'completed'));
-    setIsLoading(false);
-  }, []);
+    const fetchHistory = async () => {
+      setIsLoading(true);
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const trips = await getCompletedTripsForDriver(currentUser.uid);
+        setCompletedTrips(trips);
+      } else {
+        router.push('/auth/signin');
+      }
+      setIsLoading(false);
+    };
+    fetchHistory();
+  }, [router]);
 
-  const totalEarnings = completedTrips.reduce((sum, trip) => sum + (trip.earnings || 0), 0);
+  const totalEarnings = completedTrips
+    .filter(trip => trip.status === 'completed')
+    .reduce((sum, trip) => sum + (trip.earnings || 0), 0);
 
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <Briefcase className="h-12 w-12 animate-spin text-primary" /> {/* Using Briefcase for loading */}
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
       </div>
     );
   }
@@ -117,7 +134,7 @@ export default function HistoryPage() {
 
       <Card className="mb-6 bg-secondary/50">
         <CardContent className="p-4">
-          <p className="text-lg font-semibold">إجمالي الأرباح: <span className="text-green-600">{totalEarnings.toFixed(2)} د.أ</span></p>
+          <p className="text-lg font-semibold">إجمالي الأرباح من الرحلات المكتملة: <span className="text-green-600">{totalEarnings.toFixed(2)} د.أ</span></p>
         </CardContent>
       </Card>
 
@@ -125,7 +142,7 @@ export default function HistoryPage() {
         <Card className="text-center py-10">
           <CardContent className="flex flex-col items-center">
             <AlertTriangle className="w-16 h-16 text-muted-foreground mb-4" />
-            <p className="text-xl text-muted-foreground">لا يوجد رحلات مكتملة في السجل.</p>
+            <p className="text-xl text-muted-foreground">لا يوجد رحلات في السجل.</p>
           </CardContent>
         </Card>
       ) : (

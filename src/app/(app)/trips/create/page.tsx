@@ -11,18 +11,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DropdownSearch } from '@/components/shared/dropdown-search';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { CalendarIcon, MapPin, Clock, Users, DollarSign, PlusCircle, Trash2, Armchair, Car } from 'lucide-react';
+import { CalendarIcon, MapPin, Clock, Users, DollarSign, PlusCircle, Trash2, Armchair, Car, Loader2, AlertCircle } from 'lucide-react';
 import { JORDAN_GOVERNORATES, SEAT_CONFIG } from '@/lib/constants';
-import type { NewTripData } from '@/lib/storage';
-import { addTrip } from '@/lib/storage';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { auth } from '@/lib/firebase';
+import { addTrip, getActiveTripForDriver, type NewTripData } from '@/lib/firebaseService';
 
 const tripSchema = z.object({
   startPoint: z.string().min(1, { message: "نقطة الانطلاق مطلوبة" }),
@@ -46,11 +46,27 @@ export default function CreateTripPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingActiveTrip, setIsCheckingActiveTrip] = useState(true);
+  const [hasActiveTrip, setHasActiveTrip] = useState(false);
   const [minCalendarDate, setMinCalendarDate] = useState<Date | null>(null);
 
   useEffect(() => {
+    const checkActiveTrip = async () => {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const activeTrip = await getActiveTripForDriver(currentUser.uid);
+        if (activeTrip) {
+          setHasActiveTrip(true);
+        }
+      } else {
+        // Should not happen if page is protected
+        router.push('/auth/signin');
+      }
+      setIsCheckingActiveTrip(false);
+    };
+    checkActiveTrip();
     setMinCalendarDate(new Date(new Date().setHours(0,0,0,0)));
-  }, []);
+  }, [router]);
 
   const { control, handleSubmit, register, setValue, watch, formState: { errors } } = useForm<TripFormValues>({
     resolver: zodResolver(tripSchema),
@@ -64,7 +80,17 @@ export default function CreateTripPage() {
   const { fields, append, remove } = useFieldArray({ control, name: "stops" });
   const offeredSeatIds = watch("offeredSeatIds");
 
-  const onSubmit = (data: TripFormValues) => {
+  const onSubmit = async (data: TripFormValues) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      toast({ title: "المستخدم غير مسجل الدخول", variant: "destructive" });
+      return;
+    }
+    if (hasActiveTrip) {
+        toast({ title: "لا يمكنك إنشاء رحلة جديدة", description: "لديك رحلة نشطة بالفعل. قم بإنهائها أو إلغائها أولاً.", variant: "destructive" });
+        return;
+    }
+
     setIsLoading(true);
     const dateTime = new Date(data.tripDate);
     const [hours, minutes] = data.tripTime.split(':');
@@ -82,10 +108,16 @@ export default function CreateTripPage() {
       notes: data.notes,
     };
 
-    addTrip(newTripData);
-    toast({ title: "تم إنشاء الرحلة بنجاح!" });
-    router.push('/trips');
-    setIsLoading(false);
+    try {
+      await addTrip(currentUser.uid, newTripData);
+      toast({ title: "تم إنشاء الرحلة بنجاح!" });
+      router.push('/trips');
+    } catch (error) {
+      console.error("Error creating trip:", error);
+      toast({ title: "خطأ في إنشاء الرحلة", description: "يرجى المحاولة مرة أخرى.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const toggleSeat = (seatId: SeatID) => {
@@ -96,6 +128,32 @@ export default function CreateTripPage() {
     setValue("offeredSeatIds", newSeats, { shouldValidate: true });
   };
   
+  if (isCheckingActiveTrip) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="ms-3">جار التحقق من الرحلات النشطة...</p>
+      </div>
+    );
+  }
+
+  if (hasActiveTrip) {
+    return (
+      <Card className="max-w-2xl mx-auto text-center py-10">
+        <CardContent className="flex flex-col items-center">
+          <AlertCircle className="w-16 h-16 text-destructive mb-4" />
+          <p className="text-xl font-semibold">لديك رحلة نشطة بالفعل</p>
+          <p className="text-muted-foreground mt-2">
+            لا يمكنك إنشاء رحلة جديدة حتى يتم إنهاء أو إلغاء رحلتك الحالية.
+          </p>
+          <Button onClick={() => router.push('/trips')} className="mt-6">
+            العودة إلى رحلاتي
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="max-w-2xl mx-auto">
       <CardHeader>
@@ -265,11 +323,10 @@ export default function CreateTripPage() {
           </div>
 
           <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? 'جاري الإنشاء...' : 'إنشاء الرحلة'}
+            {isLoading ? <Loader2 className="animate-spin" /> : 'إنشاء الرحلة'}
           </Button>
         </form>
       </CardContent>
     </Card>
   );
 }
-

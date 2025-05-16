@@ -19,10 +19,11 @@ import { format, parseISO } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { CalendarIcon, MapPin, Clock, Users, DollarSign, PlusCircle, Trash2, Armchair, Car, Loader2 } from 'lucide-react';
 import { JORDAN_GOVERNORATES, SEAT_CONFIG } from '@/lib/constants';
-import type { Trip } from '@/lib/storage';
-import { getTrips, updateTrip } from '@/lib/storage';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { auth } from '@/lib/firebase';
+import { getTripById, updateTrip, type Trip } from '@/lib/firebaseService';
+
 
 const tripSchema = z.object({
   startPoint: z.string().min(1, { message: "نقطة الانطلاق مطلوبة" }),
@@ -50,6 +51,8 @@ export default function EditTripPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingTrip, setIsFetchingTrip] = useState(true);
   const [tripToEdit, setTripToEdit] = useState<Trip | null>(null);
+  const [minCalendarDate, setMinCalendarDate] = useState<Date | null>(null);
+
 
   const { control, handleSubmit, register, setValue, watch, reset, formState: { errors } } = useForm<TripFormValues>({
     resolver: zodResolver(tripSchema),
@@ -63,62 +66,91 @@ export default function EditTripPage() {
   const offeredSeatIds = watch("offeredSeatIds");
 
   useEffect(() => {
-    if (tripId) {
-      const trips = getTrips();
-      const foundTrip = trips.find(t => t.id === tripId);
-      if (foundTrip) {
-        setTripToEdit(foundTrip);
-        const tripDate = parseISO(foundTrip.dateTime);
-        reset({
-          startPoint: foundTrip.startPoint,
-          destination: foundTrip.destination,
-          stops: foundTrip.stops || [],
-          tripDate: tripDate,
-          tripTime: format(tripDate, "HH:mm"),
-          expectedArrivalTime: foundTrip.expectedArrivalTime,
-          offeredSeatIds: foundTrip.offeredSeatIds || [],
-          meetingPoint: foundTrip.meetingPoint,
-          pricePerPassenger: foundTrip.pricePerPassenger,
-          notes: foundTrip.notes || '',
-        });
-      } else {
-        toast({ title: "لم يتم العثور على الرحلة", variant: "destructive" });
-        router.push('/trips');
+    setMinCalendarDate(new Date(new Date().setHours(0,0,0,0)));
+    const fetchTrip = async () => {
+      if (tripId) {
+        setIsFetchingTrip(true);
+        const currentUser = auth.currentUser;
+        if (!currentUser) {
+          toast({ title: "المستخدم غير مسجل الدخول", variant: "destructive" });
+          router.push('/auth/signin');
+          return;
+        }
+        
+        const foundTrip = await getTripById(tripId);
+        if (foundTrip && foundTrip.driverId === currentUser.uid && (foundTrip.status === 'upcoming' || foundTrip.status === 'ongoing')) {
+          setTripToEdit(foundTrip);
+          const tripDate = parseISO(foundTrip.dateTime);
+          reset({
+            startPoint: foundTrip.startPoint,
+            destination: foundTrip.destination,
+            stops: foundTrip.stops || [],
+            tripDate: tripDate,
+            tripTime: format(tripDate, "HH:mm"),
+            expectedArrivalTime: foundTrip.expectedArrivalTime,
+            offeredSeatIds: foundTrip.offeredSeatIds || [],
+            meetingPoint: foundTrip.meetingPoint,
+            pricePerPassenger: foundTrip.pricePerPassenger,
+            notes: foundTrip.notes || '',
+          });
+        } else if (foundTrip && foundTrip.driverId !== currentUser.uid) {
+          toast({ title: "ليس لديك صلاحية لتعديل هذه الرحلة", variant: "destructive" });
+          router.push('/trips');
+        } else if (foundTrip && foundTrip.status !== 'upcoming' && foundTrip.status !== 'ongoing') {
+           toast({ title: "لا يمكن تعديل رحلة غير نشطة", variant: "destructive" });
+           router.push('/trips');
+        } else {
+          toast({ title: "لم يتم العثور على الرحلة", variant: "destructive" });
+          router.push('/trips');
+        }
+        setIsFetchingTrip(false);
       }
-      setIsFetchingTrip(false);
-    }
+    };
+    fetchTrip();
   }, [tripId, reset, router, toast]);
 
-  const onSubmit = (data: TripFormValues) => {
-    if (!tripToEdit) return;
+  const onSubmit = async (data: TripFormValues) => {
+    if (!tripToEdit || !auth.currentUser || auth.currentUser.uid !== tripToEdit.driverId) {
+      toast({ title: "خطأ في الصلاحيات أو بيانات الرحلة", variant: "destructive" });
+      return;
+    }
     setIsLoading(true);
     
     const dateTime = new Date(data.tripDate);
     const [hours, minutes] = data.tripTime.split(':');
     dateTime.setHours(parseInt(hours), parseInt(minutes));
 
-    const updatedTripData: Trip = {
-      ...tripToEdit,
+    const updatedTripData: Partial<Trip> = { // Only send partial updates
       startPoint: data.startPoint,
       destination: data.destination,
       stops: data.stops,
       dateTime: dateTime.toISOString(),
       expectedArrivalTime: data.expectedArrivalTime,
       offeredSeatIds: data.offeredSeatIds,
-      // availableSeats: data.offeredSeatIds.length, // This is initial available seats
       meetingPoint: data.meetingPoint,
       pricePerPassenger: data.pricePerPassenger,
       notes: data.notes,
     };
 
-    updateTrip(updatedTripData);
-    toast({ title: "تم تعديل الرحلة بنجاح!" });
-    router.push('/trips');
-    setIsLoading(false);
+    try {
+      await updateTrip(tripToEdit.id, updatedTripData);
+      toast({ title: "تم تعديل الرحلة بنجاح!" });
+      router.push('/trips');
+    } catch (error) {
+      console.error("Error updating trip:", error);
+      toast({ title: "خطأ في تعديل الرحلة", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const toggleSeat = (seatId: SeatID) => {
     const currentSeats = offeredSeatIds || [];
+    // Prevent modifying selected seats if they are already booked (selectedSeats)
+    if (tripToEdit?.selectedSeats?.includes(seatId)) {
+        toast({ title: "لا يمكن تعديل مقعد محجوز", description: "هذا المقعد تم حجزه بالفعل من قبل راكب.", variant: "destructive" });
+        return;
+    }
     const newSeats = currentSeats.includes(seatId)
       ? currentSeats.filter(id => id !== seatId)
       : [...currentSeats, seatId];
@@ -137,7 +169,7 @@ export default function EditTripPage() {
   if (!tripToEdit) {
      return (
       <div className="text-center py-10">
-        <p className="text-xl text-muted-foreground">لم يتم العثور على الرحلة المطلوبة.</p>
+        <p className="text-xl text-muted-foreground">لم يتم العثور على الرحلة المطلوبة أو لا يمكن تعديلها.</p>
         <Button onClick={() => router.push('/trips')} className="mt-4">العودة إلى الرحلات</Button>
       </div>
     );
@@ -248,7 +280,7 @@ export default function EditTripPage() {
                         onSelect={field.onChange}
                         initialFocus
                         locale={ar}
-                        disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}
+                        disabled={(date) => minCalendarDate ? date < minCalendarDate : true}
                       />
                     </PopoverContent>
                   </Popover>
@@ -278,11 +310,13 @@ export default function EditTripPage() {
                   type="button"
                   variant={(offeredSeatIds || []).includes(seat.id as SeatID) ? "default" : "outline"}
                   onClick={() => toggleSeat(seat.id as SeatID)}
-                  className="flex flex-col items-center h-auto p-2 text-center"
+                  className={cn("flex flex-col items-center h-auto p-2 text-center", tripToEdit?.selectedSeats?.includes(seat.id as SeatID) && "opacity-50 cursor-not-allowed")}
                   aria-pressed={(offeredSeatIds || []).includes(seat.id as SeatID)}
+                  disabled={tripToEdit?.selectedSeats?.includes(seat.id as SeatID)}
                 >
                   <Armchair className="h-6 w-6 mb-1"/>
                   <span className="text-xs">{seat.name}</span>
+                   {tripToEdit?.selectedSeats?.includes(seat.id as SeatID) && <span className="text-xs text-destructive">(محجوز)</span>}
                 </Button>
               ))}
             </div>
@@ -313,7 +347,7 @@ export default function EditTripPage() {
           </div>
 
           <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? 'جاري الحفظ...' : 'حفظ التعديلات'}
+            {isLoading ? <Loader2 className="animate-spin" /> : 'حفظ التعديلات'}
           </Button>
         </form>
       </CardContent>

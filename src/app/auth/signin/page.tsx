@@ -11,12 +11,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Mail, Lock, LogIn, ArrowLeft, Loader2 } from 'lucide-react';
+import { Phone, Lock, LogIn, ArrowLeft, Loader2 } from 'lucide-react'; // Changed Mail to Phone
 import { IconInput } from '@/components/shared/icon-input';
-import { setAuthStatus, initializeMockData } from '@/lib/storage';
+import { auth } from '@/lib/firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { setAuthStatus } from '@/lib/storage';
 
 const signInSchema = z.object({
-  email: z.string().email({ message: "الرجاء إدخال بريد إلكتروني صحيح." }),
+  phone: z.string().regex(/^07[789]\d{7}$/, { message: "الرجاء إدخال رقم هاتف أردني صحيح." }),
   password: z.string().min(6, { message: "كلمة المرور يجب أن تكون 6 أحرف على الأقل." }),
 });
 
@@ -33,26 +35,26 @@ export default function SignInPage() {
 
   const onSubmit: SubmitHandler<SignInFormValues> = async (data) => {
     setIsLoading(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    const constructedEmail = `t${data.phone}@tawsellah.com`;
 
-    // Mock authentication
-    if (data.email === "driver@tawsellah.com" && data.password === "password") {
-      setAuthStatus(true);
-      initializeMockData(); // Initialize mock data on first successful login
+    try {
+      await signInWithEmailAndPassword(auth, constructedEmail, data.password);
+      setAuthStatus(true); // For client-side navigation
       toast({
         title: "تم تسجيل الدخول بنجاح!",
-        description: "مرحباً بك في توصيلة.",
+        description: "مرحباً بك مجدداً في توصيلة.",
       });
       router.push('/trips');
-    } else {
+    } catch (error: any) {
+      console.error("Firebase SignIn Error:", error);
       toast({
         title: "خطأ في تسجيل الدخول",
-        description: "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+        description: "رقم الهاتف أو كلمة المرور غير صحيحة.",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   return (
@@ -60,17 +62,17 @@ export default function SignInPage() {
       <h2 className="mb-6 text-center text-2xl font-bold">تسجيل الدخول</h2>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <div>
-          <Label htmlFor="email">البريد الإلكتروني</Label>
+          <Label htmlFor="phone">رقم الهاتف</Label>
           <IconInput
-            id="email"
-            type="email"
-            icon={Mail}
-            placeholder="أدخل بريدك الإلكتروني"
-            {...register('email')}
-            className={errors.email ? 'border-destructive' : ''}
-            aria-invalid={errors.email ? "true" : "false"}
+            id="phone"
+            type="tel"
+            icon={Phone}
+            placeholder="أدخل رقم هاتفك"
+            {...register('phone')}
+            className={errors.phone ? 'border-destructive' : ''}
+            aria-invalid={errors.phone ? "true" : "false"}
           />
-          {errors.email && <p className="mt-1 text-sm text-destructive">{errors.email.message}</p>}
+          {errors.phone && <p className="mt-1 text-sm text-destructive">{errors.phone.message}</p>}
         </div>
 
         <div>

@@ -6,9 +6,9 @@ import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft, Users, AlertTriangle, Loader2 } from 'lucide-react';
-import type { Trip, UserProfile as Passenger } from '@/lib/storage'; // Assuming passenger might have a UserProfile like structure
-import { getTrips, getUserProfile } from '@/lib/storage'; // getUserProfile is for driver, need passenger data source
 import Link from 'next/link';
+import { auth } from '@/lib/firebase';
+import { getTripById, type Trip } from '@/lib/firebaseService'; // Assuming passenger might have a UserProfile like structure
 
 // Simplified Passenger structure for now
 interface SimplePassenger {
@@ -25,28 +25,43 @@ export default function TripPassengersPage() {
   const tripId = params.id as string;
 
   const [trip, setTrip] = useState<Trip | null>(null);
-  const [passengers, setPassengers] = useState<SimplePassenger[]>([]);
+  const [passengers, setPassengers] = useState<SimplePassenger[]>([]); // This will remain mock for now
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (tripId) {
-      const trips = getTrips();
-      const currentTrip = trips.find(t => t.id === tripId);
-      setTrip(currentTrip || null);
-
-      if (currentTrip) {
-        // Mock passenger data for now, this should come from trip.passengers or a backend
-        const mockPassengers: SimplePassenger[] = currentTrip.selectedSeats.map((seatId, index) => ({
-          id: `passenger-${index + 1}`,
-          name: `راكب ${index + 1}`,
-          phone: `079000000${index + 1}`,
-          seat: seatId.replace(/_/g, ' '),
-        }));
-        setPassengers(mockPassengers);
+    const fetchTripData = async () => {
+      if (tripId) {
+        setIsLoading(true);
+        const currentUser = auth.currentUser;
+        if(!currentUser) {
+            router.push('/auth/signin');
+            return;
+        }
+        const currentTrip = await getTripById(tripId);
+        
+        if (currentTrip && currentTrip.driverId === currentUser.uid) {
+            setTrip(currentTrip);
+            // Mock passenger data for now, this should come from trip.passengers or a backend
+            // For example, if currentTrip.passengers (which is any[] now) had actual passenger UIDs,
+            // you could fetch their profiles. For now, we map selectedSeats.
+            const mockPassengers: SimplePassenger[] = currentTrip.selectedSeats.map((seatId, index) => ({
+              id: `passenger-${index + 1}-${seatId}`, // Ensure unique key
+              name: `راكب ${index + 1}`,
+              phone: `079000000${index + 1}`, // Mock phone
+              seat: seatId.replace(/_/g, ' '),
+            }));
+            setPassengers(mockPassengers);
+        } else if (currentTrip && currentTrip.driverId !== currentUser.uid) {
+            // Driver does not own this trip
+            setTrip(null); // Or show an access denied message
+        } else {
+            setTrip(null); // Trip not found
+        }
+        setIsLoading(false);
       }
-      setIsLoading(false);
-    }
-  }, [tripId]);
+    };
+    fetchTripData();
+  }, [tripId, router]);
 
   if (isLoading) {
     return (
@@ -61,7 +76,7 @@ export default function TripPassengersPage() {
       <Card className="text-center py-10">
         <CardContent className="flex flex-col items-center">
           <AlertTriangle className="w-16 h-16 text-muted-foreground mb-4" />
-          <p className="text-xl text-muted-foreground">لم يتم العثور على الرحلة.</p>
+          <p className="text-xl text-muted-foreground">لم يتم العثور على الرحلة أو ليس لديك صلاحية لعرضها.</p>
           <Button asChild className="mt-4">
             <Link href="/trips">
               <ArrowLeft className="ms-2 h-4 w-4" /> العودة إلى الرحلات
@@ -88,7 +103,7 @@ export default function TripPassengersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>قائمة الركاب ({passengers.length})</CardTitle>
+          <CardTitle>قائمة الركاب ({passengers.length} / {trip.offeredSeatIds.length - trip.selectedSeats.length + passengers.length} مقاعد مشغولة)</CardTitle>
         </CardHeader>
         <CardContent>
           {passengers.length === 0 ? (

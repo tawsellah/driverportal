@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from 'react'; // Added useEffect
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useForm, type SubmitHandler, Controller } from 'react-hook-form';
@@ -16,56 +16,74 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { IconInput as OriginalIconInputComponent } from '@/components/shared/icon-input';
 import { VEHICLE_TYPES } from '@/lib/constants';
-import { saveUserProfile, setAuthStatus } from '@/lib/storage';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
+import { auth } from '@/lib/firebase';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { saveUserProfile, simulateCloudinaryUpload, type UserProfile } from '@/lib/firebaseService';
+import { setAuthStatus } from '@/lib/storage';
 
 
 const signUpSchema = z.object({
   // Basic Info
   fullName: z.string().min(3, { message: "الاسم الكامل مطلوب." }),
-  email: z.string().email({ message: "بريد إلكتروني غير صالح." }),
+  // email: z.string().email({ message: "بريد إلكتروني غير صالح." }), // Email will be constructed
   phone: z.string().regex(/^07[789]\d{7}$/, { message: "رقم هاتف أردني غير صالح (مثال: 0791234567)." }),
   password: z.string().min(6, { message: "كلمة المرور يجب أن تكون 6 أحرف على الأقل." }),
   // Driver Info
   idNumber: z.string().min(10, { message: "رقم الهوية مطلوب." }).max(10, { message: "رقم الهوية يجب أن يكون 10 أرقام." }),
-  // idPhoto: z.any().refine(files => files?.length === 1, "صورة الهوية مطلوبة."), // File handling needs server actions or client-side upload logic
+  idPhoto: z.any().optional(), // File handling is mocked
   licenseNumber: z.string().min(1, { message: "رقم الرخصة مطلوب." }),
   licenseExpiry: z.string().min(1, { message: "تاريخ انتهاء الرخصة مطلوب." }),
-  // licensePhotos: z.any().refine(files => files?.length > 0, "صور الرخصة مطلوبة."),
+  licensePhoto: z.any().optional(), // File handling is mocked
   // Vehicle Info
   vehicleType: z.string().min(1, { message: "نوع المركبة مطلوب." }),
   makeModel: z.string().min(1, { message: "الصنع والموديل مطلوب." }),
   year: z.string().min(4, { message: "سنة الصنع مطلوبة (مثال: 2020)." }).max(4),
   color: z.string().min(1, { message: "لون المركبة مطلوب." }),
   plateNumber: z.string().min(1, { message: "رقم اللوحة مطلوب." }),
-  // vehiclePhotos: z.any().refine(files => files?.length > 0, "صور المركبة مطلوبة."),
+  vehiclePhoto: z.any().optional(), // File handling is mocked
 });
 
 type SignUpFormValues = z.infer<typeof signUpSchema>;
 
-// Mock file input for now
-const FileInput = ({ label, id, multiple, accept, required, error }: { label: string, id: string, multiple?: boolean, accept?: string, required?: boolean, error?: string }) => (
-  <div>
-    <Label htmlFor={id}>{label} {required && <span className="text-destructive">*</span>}</Label>
-    <Input id={id} type="file" multiple={multiple} accept={accept} className={error ? 'border-destructive' : ''} />
-    {error && <p className="mt-1 text-sm text-destructive">{error}</p>}
-    <p className="mt-1 text-xs text-muted-foreground">ملاحظة: تحميل الملفات هو للعرض فقط في هذا المثال.</p>
-  </div>
-);
+// Mock file input that updates a hidden URL field or state
+const FileInput = ({ 
+  label, id, error, setValue, fieldName 
+}: { 
+  label: string, id: string, error?: string, 
+  setValue: (name: keyof SignUpFormValues, value: any) => void,
+  fieldName: keyof SignUpFormValues // To know which URL to update
+}) => {
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // In a real app, upload to Cloudinary here and get URL
+      // For mock, simulate and set a placeholder URL
+      const mockUrl = simulateCloudinaryUpload(file.name);
+      // This assumes fieldName corresponds to a URL field in the form schema or profile.
+      // We are not directly storing the file object in form state for Firebase.
+      // Instead, we'd store the URL. For this mock, we'll just log it.
+      console.log(`Simulated upload for ${fieldName}: ${mockUrl}`);
+      // To actually use this, you'd need hidden fields for URLs or manage URLs in a different state
+      // For now, the schema expects 'any' for photo fields, but Firebase will store URLs.
+    }
+  };
+  return (
+    <div>
+      <Label htmlFor={id}>{label} <span className="text-destructive">*</span></Label>
+      <Input id={id} type="file" accept="image/*" onChange={handleFileChange} className={error ? 'border-destructive' : ''} />
+      {error && <p className="mt-1 text-sm text-destructive">{error}</p>}
+      <p className="mt-1 text-xs text-muted-foreground">ملاحظة: تحميل الملفات هو للعرض والمحاكاة فقط.</p>
+    </div>
+  );
+};
 
-// Helper for IconInput error prop
-declare module 'react-hook-form' {
-  interface FieldError {
-    message?: string;
-  }
-}
 
 // Modify IconInput to accept error prop for border styling
 const PatchedIconInput = ({ error, className, ...props }: React.ComponentProps<typeof OriginalIconInputComponent> & { error?: string }) => (
   <OriginalIconInputComponent className={cn(className, error ? 'border-destructive focus:border-destructive focus-visible:ring-destructive' : '')} {...props} />
 );
-// Use PatchedIconInput throughout this component, aliased as IconInput for convenience.
 const IconInput = PatchedIconInput;
 
 
@@ -73,46 +91,64 @@ export default function SignUpPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [isMounted, setIsMounted] = useState(false); // For hydration fix
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  const { register, handleSubmit, control, formState: { errors } } = useForm<SignUpFormValues>({
+  const { register, handleSubmit, control, setValue, formState: { errors } } = useForm<SignUpFormValues>({
     resolver: zodResolver(signUpSchema),
   });
 
   const onSubmit: SubmitHandler<SignUpFormValues> = async (data) => {
     setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate API
-    
-    const newUserProfile = {
-      id: Date.now().toString(),
-      fullName: data.fullName,
-      email: data.email,
-      phone: data.phone,
-      idNumber: data.idNumber,
-      licenseNumber: data.licenseNumber,
-      licenseExpiry: data.licenseExpiry,
-      vehicleType: data.vehicleType,
-      vehicleMakeModel: data.makeModel,
-      vehicleYear: data.year,
-      vehicleColor: data.color,
-      vehiclePlateNumber: data.plateNumber,
-      rating: 0,
-      tripsCount: 0,
-      paymentMethods: { cash: true, click: false }
-    };
-    saveUserProfile(newUserProfile);
-    setAuthStatus(true);
+    const constructedEmail = `t${data.phone}@tawsellah.com`;
 
-    toast({
-      title: "تم إنشاء الحساب بنجاح!",
-      description: "يمكنك الآن تسجيل الدخول.",
-    });
-    router.push('/trips');
-    setIsLoading(false);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, constructedEmail, data.password);
+      const user = userCredential.user;
+
+      if (user) {
+        const profileData: Omit<UserProfile, 'id' | 'createdAt'> = {
+          fullName: data.fullName,
+          email: constructedEmail,
+          phone: data.phone,
+          idNumber: data.idNumber,
+          idPhotoUrl: data.idPhoto ? simulateCloudinaryUpload(`${user.uid}_idPhoto.jpg`) : undefined,
+          licenseNumber: data.licenseNumber,
+          licenseExpiry: data.licenseExpiry,
+          licensePhotoUrl: data.licensePhoto ? simulateCloudinaryUpload(`${user.uid}_licensePhoto.jpg`) : undefined,
+          vehicleType: data.vehicleType,
+          vehicleMakeModel: data.makeModel,
+          vehicleYear: data.year,
+          vehicleColor: data.color,
+          vehiclePlateNumber: data.plateNumber,
+          vehiclePhotosUrl: data.vehiclePhoto ? simulateCloudinaryUpload(`${user.uid}_vehiclePhoto.jpg`) : undefined,
+          rating: 0, // Default
+          tripsCount: 0, // Default
+          paymentMethods: { cash: true, click: false }, // Default
+        };
+
+        await saveUserProfile(user.uid, profileData);
+        setAuthStatus(true); // For client-side navigation
+
+        toast({
+          title: "تم إنشاء الحساب بنجاح!",
+          description: "سيتم توجيهك إلى لوحة التحكم.",
+        });
+        router.push('/trips');
+      }
+    } catch (error: any) {
+      console.error("Firebase Signup Error:", error);
+      toast({
+        title: "خطأ في إنشاء الحساب",
+        description: error.message || "يرجى المحاولة مرة أخرى.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -121,12 +157,13 @@ export default function SignUpPage() {
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         {!isMounted && (
           <div className="space-y-4">
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-24 w-full" />
+            {[...Array(3)].map((_, i) => (
+              <div key={i}>
+                <Skeleton className="h-8 w-1/3 mb-2" /> 
+                <Skeleton className="h-10 w-full" />
+              </div>
+            ))}
+            <Skeleton className="h-12 w-full mt-4" />
           </div>
         )}
         {isMounted && (
@@ -143,12 +180,7 @@ export default function SignUpPage() {
                   {errors.fullName && <p className="mt-1 text-sm text-destructive">{errors.fullName.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="email">البريد الإلكتروني</Label>
-                  <IconInput icon={Mail} id="email" type="email" {...register('email')} error={errors.email?.message} />
-                  {errors.email && <p className="mt-1 text-sm text-destructive">{errors.email.message}</p>}
-                </div>
-                <div>
-                  <Label htmlFor="phone">رقم الهاتف</Label>
+                  <Label htmlFor="phone">رقم الهاتف (سيستخدم للدخول مع t في البداية)</Label>
                   <IconInput icon={Phone} id="phone" type="tel" {...register('phone')} error={errors.phone?.message} />
                   {errors.phone && <p className="mt-1 text-sm text-destructive">{errors.phone.message}</p>}
                 </div>
@@ -171,7 +203,7 @@ export default function SignUpPage() {
                   <IconInput icon={CreditCard} id="idNumber" {...register('idNumber')} error={errors.idNumber?.message} />
                   {errors.idNumber && <p className="mt-1 text-sm text-destructive">{errors.idNumber.message}</p>}
                 </div>
-                <FileInput label="صورة الهوية" id="idPhoto" accept="image/*" required error={errors.idPhoto?.message as string} />
+                <FileInput label="صورة الهوية" id="idPhoto" error={errors.idPhoto?.message as string} setValue={setValue} fieldName="idPhoto" />
                 <div>
                   <Label htmlFor="licenseNumber">رقم الرخصة</Label>
                   <IconInput icon={CreditCard} id="licenseNumber" {...register('licenseNumber')} error={errors.licenseNumber?.message} />
@@ -182,7 +214,7 @@ export default function SignUpPage() {
                   <IconInput icon={CalendarDays} id="licenseExpiry" type="date" {...register('licenseExpiry')} error={errors.licenseExpiry?.message} />
                   {errors.licenseExpiry && <p className="mt-1 text-sm text-destructive">{errors.licenseExpiry.message}</p>}
                 </div>
-                <FileInput label="صور الرخصة" id="licensePhotos" accept="image/*" multiple required error={errors.licensePhotos?.message as string} />
+                <FileInput label="صورة الرخصة" id="licensePhoto" error={errors.licensePhoto?.message as string} setValue={setValue} fieldName="licensePhoto"/>
               </AccordionContent>
             </AccordionItem>
 
@@ -233,13 +265,13 @@ export default function SignUpPage() {
                   <IconInput icon={Hash} id="plateNumber" {...register('plateNumber')} error={errors.plateNumber?.message} />
                   {errors.plateNumber && <p className="mt-1 text-sm text-destructive">{errors.plateNumber.message}</p>}
                 </div>
-                <FileInput label="صور المركبة" id="vehiclePhotos" accept="image/*" multiple required error={errors.vehiclePhotos?.message as string} />
+                <FileInput label="صورة المركبة" id="vehiclePhoto" error={errors.vehiclePhoto?.message as string} setValue={setValue} fieldName="vehiclePhoto" />
               </AccordionContent>
             </AccordionItem>
           </Accordion>
         )}
 
-        <Button type="submit" className="w-full mt-6" disabled={isLoading}>
+        <Button type="submit" className="w-full mt-6" disabled={isLoading || !isMounted}>
            {isLoading ? (
             <Loader2 className="animate-spin" />
           ) : (

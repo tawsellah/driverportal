@@ -10,32 +10,25 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Switch } from '@/components/ui/switch';
-import { User, Mail, Phone, Star, Briefcase, CreditCard, Car, Palette, Hash, Edit3, Save, Loader2 } from 'lucide-react';
-import type { UserProfile } from '@/lib/storage';
-import { getUserProfile, saveUserProfile, initializeMockData } from '@/lib/storage';
+import { User, Mail, Phone, Star, Briefcase, Car, Edit3, Save, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import Image from 'next/image';
-import { VEHICLE_TYPES } from '@/lib/constants';
+import Image from 'next/image'; // Keep for potential future use, but current AvatarImage handles src
+import { VEHICLE_TYPES, JORDAN_GOVERNORATES } from '@/lib/constants';
+import { format } from 'date-fns'; // Keep for licenseExpiry if needed
+import { auth } from '@/lib/firebase';
+import { getUserProfile, updateUserProfile, type UserProfile, simulateCloudinaryUpload } from '@/lib/firebaseService';
 
 const profileSchema = z.object({
   fullName: z.string().min(3, "الاسم الكامل مطلوب"),
-  email: z.string().email("بريد إلكتروني غير صالح"),
-  phone: z.string().regex(/^07[789]\d{7}$/, "رقم هاتف أردني غير صالح"),
+  // email: z.string().email("بريد إلكتروني غير صالح"), // Email is fixed based on phone, not editable here
+  phone: z.string().regex(/^07[789]\d{7}$/, "رقم هاتف أردني غير صالح"), // Only phone might be editable for contact, not for auth email
   paymentMethods: z.object({
     cash: z.boolean().optional(),
     click: z.boolean().optional(),
     clickCode: z.string().optional(),
   }).optional(),
-  // Fields below are typically not editable by user in this simple form
-  // but included for completeness if editing is expanded
-  idNumber: z.string().optional(),
-  licenseNumber: z.string().optional(),
-  vehicleType: z.string().optional(),
-  vehicleMakeModel: z.string().optional(),
-  vehicleYear: z.string().optional(),
-  vehicleColor: z.string().optional(),
-  vehiclePlateNumber: z.string().optional(),
+  // Potentially allow idPhotoUrl update
+  idPhotoUrl: z.string().url().optional(), // For new photo upload simulation
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -46,41 +39,87 @@ export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingProfile, setIsFetchingProfile] = useState(true);
+  const [newPhotoFile, setNewPhotoFile] = useState<File | null>(null);
+
 
   const { control, handleSubmit, register, reset, watch, formState: { errors } } = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
   });
 
   useEffect(() => {
-    initializeMockData();
-    const profile = getUserProfile();
-    setUserProfile(profile);
-    if (profile) {
-      reset(profile); // Populate form with profile data
-    }
-    setIsFetchingProfile(false);
-  }, [reset]);
+    const fetchProfile = async () => {
+      setIsFetchingProfile(true);
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const profile = await getUserProfile(currentUser.uid);
+        setUserProfile(profile);
+        if (profile) {
+          reset({
+            fullName: profile.fullName,
+            phone: profile.phone, // The actual contact phone number
+            paymentMethods: profile.paymentMethods || { cash: true, click: false },
+            idPhotoUrl: profile.idPhotoUrl,
+          });
+        }
+      } else {
+        // Handle case where user is not authenticated or profile not found
+        toast({ title: "لم يتم العثور على الملف الشخصي أو المستخدم غير مسجل", variant: "destructive" });
+        // Potentially redirect to login
+      }
+      setIsFetchingProfile(false);
+    };
+    fetchProfile();
+  }, [reset, toast]);
 
   const paymentMethods = watch("paymentMethods");
 
-  const onSubmit = (data: ProfileFormValues) => {
-    if (!userProfile) return;
-    setIsLoading(true);
-    
-    const updatedProfile: UserProfile = {
-      ...userProfile,
-      fullName: data.fullName,
-      email: data.email,
-      phone: data.phone,
-      paymentMethods: data.paymentMethods,
-    };
-    saveUserProfile(updatedProfile);
-    setUserProfile(updatedProfile); // Update local state
-    setIsEditing(false);
-    toast({ title: "تم تحديث الملف الشخصي بنجاح!" });
-    setIsLoading(false);
+  const handlePhotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      setNewPhotoFile(event.target.files[0]);
+    }
   };
 
+  const onSubmit = async (data: ProfileFormValues) => {
+    if (!userProfile || !auth.currentUser) return;
+    setIsLoading(true);
+    
+    let updatedPhotoUrl = userProfile.idPhotoUrl;
+    if (newPhotoFile) {
+      // Simulate upload and get new URL
+      updatedPhotoUrl = simulateCloudinaryUpload(newPhotoFile.name);
+    }
+
+    const updates: Partial<UserProfile> = {
+      fullName: data.fullName,
+      phone: data.phone, // Update contact phone
+      paymentMethods: data.paymentMethods,
+      idPhotoUrl: updatedPhotoUrl,
+    };
+
+    try {
+      await updateUserProfile(auth.currentUser.uid, updates);
+      // Refresh profile data
+      const refreshedProfile = await getUserProfile(auth.currentUser.uid);
+      setUserProfile(refreshedProfile);
+       if (refreshedProfile) {
+          reset({ // re-populate form with latest data
+            fullName: refreshedProfile.fullName,
+            phone: refreshedProfile.phone,
+            paymentMethods: refreshedProfile.paymentMethods || { cash: true, click: false },
+            idPhotoUrl: refreshedProfile.idPhotoUrl,
+          });
+        }
+      setNewPhotoFile(null);
+      setIsEditing(false);
+      toast({ title: "تم تحديث الملف الشخصي بنجاح!" });
+    } catch (error) {
+      console.error("Profile Update Error:", error);
+      toast({ title: "خطأ في تحديث الملف الشخصي", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
   if (isFetchingProfile) {
      return (
       <div className="flex justify-center items-center h-64">
@@ -93,16 +132,25 @@ export default function ProfilePage() {
     return <p className="text-center text-muted-foreground">لم يتم العثور على الملف الشخصي.</p>;
   }
   
-  const vehicleTypeName = VEHICLE_TYPES.find(vt => vt.id === userProfile.vehicleType)?.name || userProfile.vehicleType;
+  const vehicleTypeName = VEHICLE_TYPES.find(vt => vt.id === userProfile.vehicleType)?.name || userProfile.vehicleType || 'غير محدد';
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader className="flex flex-col items-center text-center">
           <Avatar className="w-24 h-24 mb-4 border-2 border-primary">
-            <AvatarImage src={userProfile.idPhotoUrl || "https://placehold.co/100x100.png"} alt={userProfile.fullName} data-ai-hint="driver portrait" />
+            <AvatarImage 
+              src={newPhotoFile ? URL.createObjectURL(newPhotoFile) : userProfile.idPhotoUrl || "https://placehold.co/100x100.png?text=S"} 
+              alt={userProfile.fullName} 
+              data-ai-hint="driver portrait" />
             <AvatarFallback>{userProfile.fullName?.charAt(0) || 'S'}</AvatarFallback>
           </Avatar>
+          {isEditing && (
+            <div className="mb-2">
+              <Label htmlFor="newIdPhoto">تغيير الصورة الشخصية</Label>
+              <Input id="newIdPhoto" type="file" accept="image/*" onChange={handlePhotoChange} />
+            </div>
+          )}
           <CardTitle className="text-2xl">{userProfile.fullName}</CardTitle>
           <div className="text-muted-foreground flex items-center">
             <Star className="w-4 h-4 ms-1 text-yellow-400 fill-yellow-400" /> {userProfile.rating || 'N/A'}
@@ -121,18 +169,17 @@ export default function ProfilePage() {
                 {errors.fullName && <p className="mt-1 text-sm text-destructive">{errors.fullName.message}</p>}
               </div>
               <div>
-                <Label htmlFor="email">البريد الإلكتروني</Label>
-                <Input id="email" type="email" {...register('email')} disabled={!isEditing} />
-                {errors.email && <p className="mt-1 text-sm text-destructive">{errors.email.message}</p>}
+                <Label htmlFor="email">البريد الإلكتروني (للدخول)</Label>
+                <Input id="email" type="email" value={userProfile.email} disabled />
               </div>
               <div>
-                <Label htmlFor="phone">رقم الهاتف</Label>
+                <Label htmlFor="phone">رقم الهاتف (للتواصل)</Label>
                 <Input id="phone" type="tel" {...register('phone')} disabled={!isEditing} />
                 {errors.phone && <p className="mt-1 text-sm text-destructive">{errors.phone.message}</p>}
               </div>
                <div>
                 <Label htmlFor="idNumber">رقم الهوية</Label>
-                <Input id="idNumber" defaultValue={userProfile.idNumber} disabled />
+                <Input id="idNumber" value={userProfile.idNumber || 'غير متوفر'} disabled />
               </div>
             </div>
 
@@ -141,11 +188,11 @@ export default function ProfilePage() {
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <Label htmlFor="licenseNumber">رقم الرخصة</Label>
-                    <Input id="licenseNumber" defaultValue={userProfile.licenseNumber} disabled />
+                    <Input id="licenseNumber" value={userProfile.licenseNumber || 'غير متوفر'} disabled />
                 </div>
                 <div>
                     <Label htmlFor="licenseExpiry">تاريخ انتهاء الرخصة</Label>
-                    <Input id="licenseExpiry" defaultValue={userProfile.licenseExpiry ? format(new Date(userProfile.licenseExpiry), 'yyyy-MM-dd') : ''} disabled />
+                    <Input id="licenseExpiry" value={userProfile.licenseExpiry ? format(new Date(userProfile.licenseExpiry), 'yyyy-MM-dd') : 'غير متوفر'} disabled />
                 </div>
             </div>
 
@@ -159,36 +206,46 @@ export default function ProfilePage() {
               </div>
               <div>
                 <Label htmlFor="vehicleMakeModel">الصنع والموديل</Label>
-                <Input id="vehicleMakeModel" value={userProfile.vehicleMakeModel} disabled />
+                <Input id="vehicleMakeModel" value={userProfile.vehicleMakeModel || 'غير محدد'} disabled />
               </div>
               <div>
                 <Label htmlFor="vehicleYear">سنة الصنع</Label>
-                <Input id="vehicleYear" value={userProfile.vehicleYear} disabled />
+                <Input id="vehicleYear" value={userProfile.vehicleYear || 'غير محدد'} disabled />
               </div>
               <div>
                 <Label htmlFor="vehicleColor">اللون</Label>
-                <Input id="vehicleColor" value={userProfile.vehicleColor} disabled />
+                <Input id="vehicleColor" value={userProfile.vehicleColor || 'غير محدد'} disabled />
               </div>
               <div>
                 <Label htmlFor="vehiclePlateNumber">رقم اللوحة</Label>
-                <Input id="vehiclePlateNumber" value={userProfile.vehiclePlateNumber} disabled />
+                <Input id="vehiclePlateNumber" value={userProfile.vehiclePlateNumber || 'غير محدد'} disabled />
               </div>
             </div>
             
             {/* Payment Methods */}
-            <h3 className="text-lg font-semibold border-b pb-2 mt-6 mb-3">طرق الدفع</h3>
+            <h3 className="text-lg font-semibold border-b pb-2 mt-6 mb-3">طرق الدفع المقبولة</h3>
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="paymentCash" className="flex items-center">
-                  <input type="checkbox" id="paymentCash" className="ms-2 form-checkbox" {...register('paymentMethods.cash')} disabled={!isEditing} />
-                  الدفع النقدي (كاش)
-                </Label>
+              <div className="flex items-center">
+                <Controller
+                    name="paymentMethods.cash"
+                    control={control}
+                    render={({ field }) => (
+                        <input type="checkbox" id="paymentCash" className="ms-2 form-checkbox" 
+                               checked={field.value || false} onChange={field.onChange} disabled={!isEditing} />
+                    )}
+                />
+                <Label htmlFor="paymentCash" className="me-2">الدفع النقدي (كاش)</Label>
               </div>
-              <div className="flex items-center justify-between">
-                 <Label htmlFor="paymentClick" className="flex items-center">
-                    <input type="checkbox" id="paymentClick" className="ms-2 form-checkbox" {...register('paymentMethods.click')} disabled={!isEditing} />
-                    CliQ (كليك)
-                </Label>
+              <div className="flex items-center">
+                <Controller
+                    name="paymentMethods.click"
+                    control={control}
+                    render={({ field }) => (
+                        <input type="checkbox" id="paymentClick" className="ms-2 form-checkbox"
+                               checked={field.value || false} onChange={field.onChange} disabled={!isEditing} />
+                    )}
+                />
+                 <Label htmlFor="paymentClick" className="me-2">CliQ (كليك)</Label>
               </div>
               {paymentMethods?.click && (
                 <div>
@@ -205,14 +262,14 @@ export default function ProfilePage() {
             )}
           </form>
         </CardContent>
-        <CardFooter>
+        <CardFooter className="flex flex-col gap-2">
           {!isEditing && (
-            <Button onClick={() => { setIsEditing(true); reset(userProfile); }} className="w-full">
+            <Button onClick={() => { setIsEditing(true); /* reset happens in useEffect on userProfile change */ }} className="w-full">
               <Edit3 className="ms-2 h-4 w-4" /> تعديل الملف الشخصي
             </Button>
           )}
           {isEditing && (
-             <Button onClick={() => { setIsEditing(false); reset(userProfile); }} variant="outline" className="w-full">
+             <Button onClick={() => { setIsEditing(false); setNewPhotoFile(null); reset({ fullName: userProfile.fullName, phone: userProfile.phone, paymentMethods: userProfile.paymentMethods, idPhotoUrl: userProfile.idPhotoUrl }); }} variant="outline" className="w-full">
                إلغاء
             </Button>
           )}
@@ -221,4 +278,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-
