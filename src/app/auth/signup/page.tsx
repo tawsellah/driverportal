@@ -1,9 +1,10 @@
+
 "use client";
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useForm, type SubmitHandler } from 'react-hook-form';
+import { useForm, type SubmitHandler, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
@@ -13,9 +14,10 @@ import { useToast } from '@/hooks/use-toast';
 import { UserPlus, ArrowLeft, User, Mail, Phone, Lock, CreditCard, Car, Image as ImageIcon, CalendarDays, Palette, Hash, Loader2 } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { IconInput } from '@/components/shared/icon-input';
+import { IconInput as OriginalIconInputComponent } from '@/components/shared/icon-input'; // Renamed to avoid conflict
 import { VEHICLE_TYPES } from '@/lib/constants';
 import { saveUserProfile, setAuthStatus } from '@/lib/storage';
+import { cn } from '@/lib/utils';
 
 
 const signUpSchema = z.object({
@@ -50,6 +52,20 @@ const FileInput = ({ label, id, multiple, accept, required, error }: { label: st
     <p className="mt-1 text-xs text-muted-foreground">ملاحظة: تحميل الملفات هو للعرض فقط في هذا المثال.</p>
   </div>
 );
+
+// Helper for IconInput error prop
+declare module 'react-hook-form' {
+  interface FieldError {
+    message?: string;
+  }
+}
+
+// Modify IconInput to accept error prop for border styling
+const PatchedIconInput = ({ error, className, ...props }: React.ComponentProps<typeof OriginalIconInputComponent> & { error?: string }) => (
+  <OriginalIconInputComponent className={cn(className, error ? 'border-destructive focus:border-destructive focus-visible:ring-destructive' : '')} {...props} />
+);
+// Use PatchedIconInput throughout this component, aliased as IconInput for convenience.
+const IconInput = PatchedIconInput;
 
 
 export default function SignUpPage() {
@@ -225,20 +241,3 @@ export default function SignUpPage() {
     </div>
   );
 }
-
-// Helper for IconInput error prop
-declare module 'react-hook-form' {
-  interface FieldError {
-    message?: string;
-  }
-}
-
-// Modify IconInput to accept error prop for border styling
-IconInput.defaultProps = {
-  error: undefined,
-};
-const OriginalIconInput = IconInput;
-const PatchedIconInput = ({ error, className, ...props }: React.ComponentProps<typeof OriginalIconInput> & { error?: string }) => (
-  <OriginalIconInput className={cn(className, error ? 'border-destructive focus:border-destructive focus-visible:ring-destructive' : '')} {...props} />
-);
-export { PatchedIconInput as IconInput };
