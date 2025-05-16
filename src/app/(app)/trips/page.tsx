@@ -1,5 +1,7 @@
+
 "use client";
 
+import type { SeatID } from '@/lib/constants';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -21,6 +23,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
+import { JORDAN_GOVERNORATES } from '@/lib/constants';
+
 
 function TripCard({ trip, onDelete }: { trip: Trip; onDelete: (tripId: string) => void }) {
   const { toast } = useToast();
@@ -30,19 +34,32 @@ function TripCard({ trip, onDelete }: { trip: Trip; onDelete: (tripId: string) =
     toast({ title: "تم حذف الرحلة بنجاح" });
   };
 
+  const startPointName = JORDAN_GOVERNORATES.find(g => g.id === trip.startPoint)?.name || trip.startPoint;
+  const destinationName = JORDAN_GOVERNORATES.find(g => g.id === trip.destination)?.name || trip.destination;
+  const stopNames = trip.stops?.map(s => JORDAN_GOVERNORATES.find(g => g.id === s)?.name || s).join('، ');
+
+  const currentAvailableSeats = (trip.offeredSeatIds?.length || 0) - (trip.selectedSeats?.length || 0);
+
+  // A simple ArrowLeft icon component for use within TripCard title
+  const ArrowLeftShort = ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className={`inline-block ${className}`} viewBox="0 0 16 16">
+      <path fillRule="evenodd" d="M12 8a.5.5 0 0 1-.5.5H5.707l2.147 2.146a.5.5 0 0 1-.708.708l-3-3a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L5.707 7.5H11.5a.5.5 0 0 1 .5.5z"/>
+    </svg>
+  );
+
   return (
     <Card className="mb-4 shadow-lg hover:shadow-xl transition-shadow duration-300">
       <CardHeader>
         <CardTitle className="flex items-center text-xl">
           <Route className="ms-2 h-6 w-6 text-primary" />
-          {trip.startPoint} <ArrowLeftShort className="mx-1"/> {trip.destination}
+          {startPointName} <ArrowLeftShort className="mx-1"/> {destinationName}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
-        {trip.stops && trip.stops.length > 0 && (
+        {stopNames && (
           <div className="flex items-center">
             <MapPin className="ms-2 h-4 w-4 text-muted-foreground" />
-            محطات التوقف: {trip.stops.join('، ')}
+            محطات التوقف: {stopNames}
           </div>
         )}
         <div className="flex items-center">
@@ -55,12 +72,12 @@ function TripCard({ trip, onDelete }: { trip: Trip; onDelete: (tripId: string) =
         </div>
         <div className="flex items-center">
           <Users className="ms-2 h-4 w-4 text-muted-foreground" />
-          المقاعد المتاحة: {trip.availableSeats}
+          المقاعد المتاحة: {currentAvailableSeats} ({trip.offeredSeatIds?.length || 0} معروضة)
         </div>
         {trip.selectedSeats && trip.selectedSeats.length > 0 && (
           <div className="flex items-center">
             <Armchair className="ms-2 h-4 w-4 text-muted-foreground" />
-            المقاعد المحجوزة: {trip.selectedSeats.join('، ')}
+            المقاعد المحجوزة: {trip.selectedSeats.map(s => s.replace(/_/g, ' ')).join('، ')}
           </div>
         )}
         <div className="flex items-center">
@@ -97,20 +114,16 @@ function TripCard({ trip, onDelete }: { trip: Trip; onDelete: (tripId: string) =
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-        <Button variant="secondary" size="sm" onClick={() => toast({title: "عرض الركاب (قيد التطوير)"})}>
-          <Users className="ms-1 h-4 w-4" /> الركاب
+        <Button variant="secondary" size="sm" asChild>
+          <Link href={`/passengers/${trip.id}`}>
+            <Users className="ms-1 h-4 w-4" /> الركاب
+          </Link>
         </Button>
       </CardFooter>
     </Card>
   );
 }
 
-// A simple ArrowLeft icon component for use within TripCard title
-const ArrowLeftShort = ({ className }: { className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className={`inline-block ${className}`} viewBox="0 0 16 16">
-    <path fillRule="evenodd" d="M12 8a.5.5 0 0 1-.5.5H5.707l2.147 2.146a.5.5 0 0 1-.708.708l-3-3a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L5.707 7.5H11.5a.5.5 0 0 1 .5.5z"/>
-  </svg>
-);
 
 export default function TripsPage() {
   const [trips, setTrips] = useState<Trip[]>([]);

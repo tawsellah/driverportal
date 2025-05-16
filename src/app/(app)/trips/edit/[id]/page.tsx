@@ -3,7 +3,7 @@
 
 import type { SeatID } from '@/lib/constants';
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -11,16 +11,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DropdownSearch } from '@/components/shared/dropdown-search';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { CalendarIcon, MapPin, Clock, Users, DollarSign, PlusCircle, Trash2, Armchair, Car } from 'lucide-react';
+import { CalendarIcon, MapPin, Clock, Users, DollarSign, PlusCircle, Trash2, Armchair, Car, Loader2 } from 'lucide-react';
 import { JORDAN_GOVERNORATES, SEAT_CONFIG } from '@/lib/constants';
-import type { NewTripData } from '@/lib/storage';
-import { addTrip } from '@/lib/storage';
+import type { Trip } from '@/lib/storage';
+import { getTrips, updateTrip } from '@/lib/storage';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -42,43 +42,77 @@ type TripFormValues = z.infer<typeof tripSchema>;
 const governorateItems = JORDAN_GOVERNORATES.map(gov => ({ id: gov.id, name: gov.name }));
 const passengerSeats = Object.values(SEAT_CONFIG).filter(seat => seat.id !== 'driver');
 
-export default function CreateTripPage() {
+export default function EditTripPage() {
   const router = useRouter();
+  const params = useParams();
+  const tripId = params.id as string;
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetchingTrip, setIsFetchingTrip] = useState(true);
+  const [tripToEdit, setTripToEdit] = useState<Trip | null>(null);
 
-  const { control, handleSubmit, register, setValue, watch, formState: { errors } } = useForm<TripFormValues>({
+  const { control, handleSubmit, register, setValue, watch, reset, formState: { errors } } = useForm<TripFormValues>({
     resolver: zodResolver(tripSchema),
     defaultValues: {
       stops: [],
       offeredSeatIds: [],
-      pricePerPassenger: 0,
     },
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: "stops" });
   const offeredSeatIds = watch("offeredSeatIds");
 
+  useEffect(() => {
+    if (tripId) {
+      const trips = getTrips();
+      const foundTrip = trips.find(t => t.id === tripId);
+      if (foundTrip) {
+        setTripToEdit(foundTrip);
+        const tripDate = parseISO(foundTrip.dateTime);
+        reset({
+          startPoint: foundTrip.startPoint,
+          destination: foundTrip.destination,
+          stops: foundTrip.stops || [],
+          tripDate: tripDate,
+          tripTime: format(tripDate, "HH:mm"),
+          expectedArrivalTime: foundTrip.expectedArrivalTime,
+          offeredSeatIds: foundTrip.offeredSeatIds || [],
+          meetingPoint: foundTrip.meetingPoint,
+          pricePerPassenger: foundTrip.pricePerPassenger,
+          notes: foundTrip.notes || '',
+        });
+      } else {
+        toast({ title: "لم يتم العثور على الرحلة", variant: "destructive" });
+        router.push('/trips');
+      }
+      setIsFetchingTrip(false);
+    }
+  }, [tripId, reset, router, toast]);
+
   const onSubmit = (data: TripFormValues) => {
+    if (!tripToEdit) return;
     setIsLoading(true);
+    
     const dateTime = new Date(data.tripDate);
     const [hours, minutes] = data.tripTime.split(':');
     dateTime.setHours(parseInt(hours), parseInt(minutes));
 
-    const newTripData: NewTripData = {
+    const updatedTripData: Trip = {
+      ...tripToEdit,
       startPoint: data.startPoint,
       destination: data.destination,
       stops: data.stops,
       dateTime: dateTime.toISOString(),
       expectedArrivalTime: data.expectedArrivalTime,
       offeredSeatIds: data.offeredSeatIds,
+      // availableSeats: data.offeredSeatIds.length, // This is initial available seats
       meetingPoint: data.meetingPoint,
       pricePerPassenger: data.pricePerPassenger,
       notes: data.notes,
     };
 
-    addTrip(newTripData);
-    toast({ title: "تم إنشاء الرحلة بنجاح!" });
+    updateTrip(updatedTripData);
+    toast({ title: "تم تعديل الرحلة بنجاح!" });
     router.push('/trips');
     setIsLoading(false);
   };
@@ -90,11 +124,29 @@ export default function CreateTripPage() {
       : [...currentSeats, seatId];
     setValue("offeredSeatIds", newSeats, { shouldValidate: true });
   };
+
+  if (isFetchingTrip) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="ms-3">جاري تحميل بيانات الرحلة...</p>
+      </div>
+    );
+  }
+
+  if (!tripToEdit) {
+     return (
+      <div className="text-center py-10">
+        <p className="text-xl text-muted-foreground">لم يتم العثور على الرحلة المطلوبة.</p>
+        <Button onClick={() => router.push('/trips')} className="mt-4">العودة إلى الرحلات</Button>
+      </div>
+    );
+  }
   
   return (
     <Card className="max-w-2xl mx-auto">
       <CardHeader>
-        <CardTitle className="text-2xl font-bold">إنشاء رحلة جديدة</CardTitle>
+        <CardTitle className="text-2xl font-bold">تعديل الرحلة</CardTitle>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -143,7 +195,7 @@ export default function CreateTripPage() {
             <Label>محطات التوقف (اختياري)</Label>
             {fields.map((field, index) => (
               <div key={field.id} className="flex items-center gap-2 mt-2">
-                <Controller
+                 <Controller
                   name={`stops.${index}`}
                   control={control}
                   render={({ field: stopField }) => (
@@ -162,6 +214,7 @@ export default function CreateTripPage() {
               </div>
             ))}
             {errors.stops && errors.stops.map((error, index) => error && <p key={index} className="mt-1 text-sm text-destructive">{error.message}</p>)}
+
             <Button type="button" variant="outline" size="sm" onClick={() => append('')} className="mt-2">
               <PlusCircle className="ms-2 h-4 w-4" /> إضافة محطة توقف
             </Button>
@@ -208,7 +261,7 @@ export default function CreateTripPage() {
               <Input id="tripTime" type="time" {...register('tripTime')} />
               {errors.tripTime && <p className="mt-1 text-sm text-destructive">{errors.tripTime.message}</p>}
             </div>
-             <div>
+            <div>
               <Label htmlFor="expectedArrivalTime">وقت الوصول المتوقع</Label>
               <Input id="expectedArrivalTime" type="time" {...register('expectedArrivalTime')} />
               {errors.expectedArrivalTime && <p className="mt-1 text-sm text-destructive">{errors.expectedArrivalTime.message}</p>}
@@ -217,16 +270,16 @@ export default function CreateTripPage() {
           
           {/* Seat Selection */}
           <div>
-            <Label>المقاعد المعروضة (المتاحة)</Label>
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 p-4 border rounded-md mt-1">
+            <Label>المقاعد المعروضة</Label>
+             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 p-4 border rounded-md mt-1">
               {passengerSeats.map(seat => (
                 <Button
                   key={seat.id}
                   type="button"
-                  variant={offeredSeatIds.includes(seat.id as SeatID) ? "default" : "outline"}
+                  variant={(offeredSeatIds || []).includes(seat.id as SeatID) ? "default" : "outline"}
                   onClick={() => toggleSeat(seat.id as SeatID)}
                   className="flex flex-col items-center h-auto p-2 text-center"
-                  aria-pressed={offeredSeatIds.includes(seat.id as SeatID)}
+                  aria-pressed={(offeredSeatIds || []).includes(seat.id as SeatID)}
                 >
                   <Armchair className="h-6 w-6 mb-1"/>
                   <span className="text-xs">{seat.name}</span>
@@ -234,8 +287,8 @@ export default function CreateTripPage() {
               ))}
             </div>
             {errors.offeredSeatIds && <p className="mt-1 text-sm text-destructive">{errors.offeredSeatIds.message}</p>}
-            <p className="mt-1 text-sm text-muted-foreground">
-              عدد المقاعد المتاحة: {offeredSeatIds?.length || 0}
+             <p className="mt-1 text-sm text-muted-foreground">
+              عدد المقاعد المختارة: {offeredSeatIds?.length || 0}
             </p>
           </div>
 
@@ -260,7 +313,7 @@ export default function CreateTripPage() {
           </div>
 
           <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? 'جاري الإنشاء...' : 'إنشاء الرحلة'}
+            {isLoading ? 'جاري الحفظ...' : 'حفظ التعديلات'}
           </Button>
         </form>
       </CardContent>

@@ -1,6 +1,8 @@
 
 "use client"
 
+import type { SeatID } from './constants';
+
 // User Profile
 export interface UserProfile {
   id: string;
@@ -30,13 +32,13 @@ export interface UserProfile {
 // Trip
 export interface Trip {
   id: string;
-  startPoint: string;
-  stops?: string[];
-  destination: string;
-  dateTime: string;
-  expectedArrivalTime: string;
-  availableSeats: number;
-  selectedSeats: string[]; // e.g., ['front_passenger', 'back_right']
+  startPoint: string; // Governorate ID
+  stops?: string[]; // Array of Governorate IDs
+  destination: string; // Governorate ID
+  dateTime: string; // ISO string
+  expectedArrivalTime: string; // time string e.g., "10:00"
+  offeredSeatIds: SeatID[]; // Specific seats offered by driver
+  selectedSeats: SeatID[]; // Seats booked by passengers
   meetingPoint: string;
   pricePerPassenger: number;
   notes?: string;
@@ -76,7 +78,11 @@ export const saveUserProfile = (profile: UserProfile): void => {
 export const getTrips = (): Trip[] => {
   if (typeof window === 'undefined') return [];
   const data = localStorage.getItem(TRIPS_KEY);
-  return data ? JSON.parse(data) : [];
+  return data ? (JSON.parse(data) as Trip[]).map(trip => ({
+    ...trip,
+    offeredSeatIds: trip.offeredSeatIds || [], // Ensure offeredSeatIds exists
+    selectedSeats: trip.selectedSeats || [], // Ensure selectedSeats exists
+  })) : [];
 };
 
 export const saveTrips = (trips: Trip[]): void => {
@@ -84,11 +90,16 @@ export const saveTrips = (trips: Trip[]): void => {
   localStorage.setItem(TRIPS_KEY, JSON.stringify(trips));
 };
 
-export const addTrip = (trip: Omit<Trip, 'id' | 'status'>): Trip => {
+export interface NewTripData extends Omit<Trip, 'id' | 'status' | 'selectedSeats' | 'passengers' | 'earnings'> {
+  // availableSeats is derived from offeredSeatIds.length
+}
+
+export const addTrip = (tripData: NewTripData): Trip => {
   const newTrip: Trip = {
-    ...trip,
+    ...tripData,
     id: Date.now().toString(), // Simple ID generation
     status: 'upcoming',
+    selectedSeats: [],
     passengers: [],
   };
   const trips = getTrips();
@@ -116,7 +127,7 @@ export const initializeMockData = () => {
     saveUserProfile({
       id: 'driver001',
       fullName: 'أحمد محمد',
-      email: 'ahmad@example.com',
+      email: 'driver@tawsellah.com', // Matched with signin
       phone: '0791234567',
       rating: 4.5,
       tripsCount: 20,
@@ -135,26 +146,26 @@ export const initializeMockData = () => {
     const mockTrips: Trip[] = [
       {
         id: '1',
-        startPoint: 'عمان',
-        destination: 'إربد',
+        startPoint: 'amman',
+        destination: 'irbid',
         dateTime: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(), // 2 days from now
         expectedArrivalTime: '10:00',
-        availableSeats: 3,
-        selectedSeats: ['front_passenger', 'back_right'],
+        offeredSeatIds: ['front_passenger', 'back_right', 'back_left'],
+        selectedSeats: ['front_passenger'] as SeatID[],
         meetingPoint: 'دوار الداخلية',
         pricePerPassenger: 5,
         status: 'upcoming',
-        passengers: [],
+        passengers: [{}],
       },
       {
         id: '2',
-        startPoint: 'الزرقاء',
-        destination: 'العقبة',
-        stops: ['مأدبا'],
+        startPoint: 'zarqa',
+        destination: 'aqaba',
+        stops: ['madaba'],
         dateTime: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days from now
         expectedArrivalTime: '17:00',
-        availableSeats: 2,
-        selectedSeats: ['back_left', 'back_middle'],
+        offeredSeatIds: ['front_passenger', 'back_right'],
+        selectedSeats: [] as SeatID[],
         meetingPoint: 'مجمع الباصات',
         pricePerPassenger: 15,
         status: 'upcoming',
@@ -162,12 +173,12 @@ export const initializeMockData = () => {
       },
       {
         id: '3',
-        startPoint: 'عمان',
-        destination: 'جرش',
+        startPoint: 'amman',
+        destination: 'jerash',
         dateTime: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days ago
         expectedArrivalTime: '14:00',
-        availableSeats: 0, // All seats taken
-        selectedSeats: ['front_passenger', 'back_right', 'back_middle', 'back_left'],
+        offeredSeatIds: ['front_passenger', 'back_right', 'back_middle', 'back_left'],
+        selectedSeats: ['front_passenger', 'back_right', 'back_middle', 'back_left'] as SeatID[],
         meetingPoint: 'الجامعة الأردنية',
         pricePerPassenger: 3,
         status: 'completed',
@@ -175,4 +186,6 @@ export const initializeMockData = () => {
         passengers: [{}, {}, {}, {}],
       },
     ];
-    saveTri
+    saveTrips(mockTrips);
+  }
+};
