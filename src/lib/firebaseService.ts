@@ -18,16 +18,16 @@ export interface UserProfile {
   email: string; // The t-prefixed email
   phone: string; // Original phone number
   idNumber?: string;
-  idPhotoUrl?: string; // Simulated Cloudinary URL
+  idPhotoUrl?: string | null; // Simulated Cloudinary URL
   licenseNumber?: string;
   licenseExpiry?: string;
-  licensePhotoUrl?: string; // Simulated Cloudinary URL
+  licensePhotoUrl?: string | null; // Simulated Cloudinary URL
   vehicleType?: string;
   vehicleMakeModel?: string;
   vehicleYear?: string;
   vehicleColor?: string;
   vehiclePlateNumber?: string;
-  vehiclePhotosUrl?: string; // Simulated Cloudinary URL
+  vehiclePhotosUrl?: string | null; // Simulated Cloudinary URL
   rating?: number;
   tripsCount?: number;
   paymentMethods?: {
@@ -145,16 +145,22 @@ export const getTripById = async (tripId: string): Promise<Trip | null> => {
 
 
 export const getActiveTripForDriver = async (driverId: string): Promise<Trip | null> => {
+  // WORKAROUND for missing Firebase index on 'driverId' in 'currentTrips'.
+  // This fetches ALL current trips and filters client-side.
+  // THIS IS INEFFICIENT FOR LARGE DATASETS.
+  // The proper fix is to add ".indexOn": "driverId" to your Firebase Realtime Database rules for the 'currentTrips' path.
+  console.warn("Fetching all current trips due to missing Firebase index. Add '.indexOn': 'driverId' to 'currentTrips' rules for better performance.");
+  
   const tripsRef = ref(database, CURRENT_TRIPS_PATH);
-  const q = query(tripsRef, orderByChild('driverId'), equalTo(driverId));
-  const snapshot = await get(q);
+  const snapshot = await get(tripsRef); // Fetch all trips under CURRENT_TRIPS_PATH
+
   if (snapshot.exists()) {
     let activeTrip: Trip | null = null;
     snapshot.forEach((childSnapshot) => {
       const trip = childSnapshot.val() as Trip;
-      if (trip.status === 'upcoming' || trip.status === 'ongoing') {
+      if (trip.driverId === driverId && (trip.status === 'upcoming' || trip.status === 'ongoing')) {
         activeTrip = trip;
-        return true; // Break loop
+        return true; // Break loop (forEach doesn't truly break, but this is a common pattern)
       }
     });
     return activeTrip;
@@ -163,14 +169,20 @@ export const getActiveTripForDriver = async (driverId: string): Promise<Trip | n
 };
 
 export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Promise<Trip[]> => {
+  // WORKAROUND for missing Firebase index on 'driverId' in 'currentTrips'.
+  // This fetches ALL current trips and filters client-side.
+  // THIS IS INEFFICIENT FOR LARGE DATASETS.
+  // The proper fix is to add ".indexOn": "driverId" to your Firebase Realtime Database rules for the 'currentTrips' path.
+  console.warn("Fetching all current trips due to missing Firebase index. Add '.indexOn': 'driverId' to 'currentTrips' rules for better performance.");
+
   const tripsRef = ref(database, CURRENT_TRIPS_PATH);
-  const q = query(tripsRef, orderByChild('driverId'), equalTo(driverId));
-  const snapshot = await get(q);
+  const snapshot = await get(tripsRef); // Fetch all trips
   const trips: Trip[] = [];
+
   if (snapshot.exists()) {
     snapshot.forEach((childSnapshot) => {
       const trip = childSnapshot.val() as Trip;
-      if (trip.status === 'upcoming' || trip.status === 'ongoing') {
+      if (trip.driverId === driverId && (trip.status === 'upcoming' || trip.status === 'ongoing')) {
         trips.push(trip);
       }
     });
@@ -179,6 +191,10 @@ export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Pro
 };
 
 export const getCompletedTripsForDriver = async (driverId: string): Promise<Trip[]> => {
+  // NOTE: If you query finishedTrips by driverId frequently, you should also add
+  // ".indexOn": "driverId" to your Firebase rules for the 'finishedTrips/{driverId}' path,
+  // or structure 'finishedTrips' so that driverId is a top-level key.
+  // Current implementation fetches all trips for a specific driver under 'finishedTrips/{driverId}'.
   const tripsRef = ref(database, `${FINISHED_TRIPS_PATH}/${driverId}`);
   const snapshot = await get(tripsRef);
   const trips: Trip[] = [];
