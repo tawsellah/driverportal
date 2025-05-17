@@ -166,7 +166,7 @@ export const getActiveTripForDriver = async (driverId: string): Promise<Trip | n
 };
 
 export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Promise<Trip[]> => {
-   console.warn("[WORKAROUND] Fetching all current trips and filtering client-side due to missing Firebase index. Add '.indexOn': 'driverId' to 'currentTrips' rules for better performance.");
+   console.warn("[WORKAROUND] Fetching all current trips and filtering client-side due to missing Firebase index. Add '.indexOn': ['driverId', 'status'] to 'currentTrips' rules for better performance.");
 
   const tripsRef = ref(database, CURRENT_TRIPS_PATH);
   const snapshot = await get(tripsRef); 
@@ -231,13 +231,13 @@ export const getTrips = async (): Promise<Trip[]> => {
  * بدلاً من ذلك، هي تنشئ رابط URL وهمي بناءً على اسم الملف المدخل،
  * ليتم حفظه في Firebase Realtime Database كأنه رابط صورة حقيقي من ImageKit.
  * في تطبيق حقيقي، ستحتاج إلى استخدام ImageKit SDK وربما خادم وسيط لرفع الملفات بأمان.
- * **ملاحظة:** يرجى استبدال "YOUR_IMAGEKIT_ID" بمعرف ImageKit الفعلي الخاص بك.
+ * يتم استخدام معرّف ImageKit الخاص بالمستخدم (Tawsellah) هنا.
  * @param fileName اسم الملف المراد "رفعه" (مثل "my-image.jpg").
  * @returns رابط URL مُحاكى لـ ImageKit.
  */
 export const simulateImageKitUpload = (fileName: string = "sample.jpg"): string => {
-  const imageKitId = "YOUR_IMAGEKIT_ID"; // <--- استبدل هذا بمعرف ImageKit الخاص بك
-  const uploadFolder = "uploads"; // يمكنك تغيير هذا إذا كنت تستخدم مجلدًا مختلفًا في ImageKit
+  const imageKitId = "Tawsellah"; // User's ImageKit ID from their URL Endpoint
+  const uploadFolder = "uploads"; // You can change this if you use a different folder structure in ImageKit
 
   // Extract filename without extension for public_id
   const nameParts = fileName.split('.');
@@ -247,8 +247,9 @@ export const simulateImageKitUpload = (fileName: string = "sample.jpg"): string 
   // Create a unique-ish filename by appending a short random string and timestamp component.
   const uniqueFileName = `${baseName}_${Math.random().toString(36).substring(2, 7)}_${Date.now()}`;
   
+  // Construct the URL based on the ImageKit endpoint structure
   const generatedUrl = `https://ik.imagekit.io/${imageKitId}/${uploadFolder}/${uniqueFileName}.${extension}`;
-  console.log(`[SIMULATE IMAGEKIT UPLOAD] Generated URL for ${fileName}: ${generatedUrl}`);
+  console.log(`[SIMULATE IMAGEKIT UPLOAD] Generated URL for ${fileName} using ImageKit ID '${imageKitId}': ${generatedUrl}`);
   return generatedUrl;
 };
 
