@@ -12,13 +12,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/componen
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { User, Mail, Phone, Star, Briefcase, Car, Edit3, Save, Loader2, Check, X, LogOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import Image from 'next/image';
+// import Image from 'next/image'; // Not used directly, AvatarImage handles next/image capabilities
 import { VEHICLE_TYPES, JORDAN_GOVERNORATES } from '@/lib/constants';
 import { format } from 'date-fns';
 import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
-import { getUserProfile, updateUserProfile, type UserProfile, simulateCloudinaryUpload } from '@/lib/firebaseService';
+import { getUserProfile, updateUserProfile, type UserProfile, simulateImageKitUpload } from '@/lib/firebaseService'; // Updated import
 import { setAuthStatus } from '@/lib/storage';
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -30,7 +30,7 @@ const profileSchema = z.object({
     click: z.boolean().optional().default(false),
     clickCode: z.string().optional().nullable(),
   }).optional(),
-  idPhotoUrl: z.string().url().or(z.literal("")).optional().nullable(),
+  idPhotoUrl: z.string().url().or(z.literal("")).optional().nullable(), // No direct validation for file upload here
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -97,8 +97,8 @@ export default function ProfilePage() {
     
     let updatedPhotoUrl: string | null = userProfile.idPhotoUrl || null;
     if (newPhotoFile) {
-      updatedPhotoUrl = simulateCloudinaryUpload(newPhotoFile.name); 
-      // console.log from simulateCloudinaryUpload will show the generated URL
+      updatedPhotoUrl = simulateImageKitUpload(newPhotoFile.name); // Use ImageKit simulation
+      console.log("[SIMULATE UPLOAD] Generated ImageKit URL for profile photo:", updatedPhotoUrl);
     }
 
     const updates: Partial<UserProfile> = {
@@ -115,7 +115,7 @@ export default function ProfilePage() {
     try {
       await updateUserProfile(auth.currentUser.uid, updates);
       const refreshedProfile = await getUserProfile(auth.currentUser.uid);
-      console.log("[DEBUG] Refreshed profile idPhotoUrl after save:", refreshedProfile?.idPhotoUrl); // DEBUGGING LINE
+      console.log("[DEBUG] Refreshed profile idPhotoUrl after save:", refreshedProfile?.idPhotoUrl); 
       setUserProfile(refreshedProfile);
        if (refreshedProfile) {
           reset({ 
@@ -162,12 +162,13 @@ export default function ProfilePage() {
   
   const vehicleTypeName = VEHICLE_TYPES.find(vt => vt.id === userProfile.vehicleType)?.name || userProfile.vehicleType || 'غير محدد';
   
-  let avatarSrc = "https://placehold.co/100x100.png?text=S";
+  let avatarSrc = "https://placehold.co/100x100.png?text=S"; // Default placeholder
   if (newPhotoFile) {
-    avatarSrc = URL.createObjectURL(newPhotoFile);
-  } else if (userProfile && userProfile.idPhotoUrl) { // Added userProfile check
-    avatarSrc = userProfile.idPhotoUrl;
+    avatarSrc = URL.createObjectURL(newPhotoFile); // Preview new file
+  } else if (userProfile && userProfile.idPhotoUrl) { 
+    avatarSrc = userProfile.idPhotoUrl; // Use saved URL
   }
+
 
   return (
     <div className="space-y-6">
@@ -175,7 +176,7 @@ export default function ProfilePage() {
         <CardHeader className="flex flex-col items-center text-center">
           <Avatar className="w-24 h-24 mb-4 border-2 border-primary">
             <AvatarImage 
-              key={avatarSrc} // Added key to force re-render
+              key={avatarSrc} 
               src={avatarSrc} 
               alt={userProfile.fullName || 'Driver'}
               data-ai-hint="driver portrait" />
@@ -346,6 +347,4 @@ export default function ProfilePage() {
     </div>
   );
 }
-
-
     

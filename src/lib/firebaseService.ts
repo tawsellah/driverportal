@@ -18,16 +18,16 @@ export interface UserProfile {
   email: string; // The t-prefixed email
   phone: string; // Original phone number
   idNumber?: string;
-  idPhotoUrl?: string | null; // Simulated Cloudinary URL
+  idPhotoUrl?: string | null; // Simulated ImageKit URL
   licenseNumber?: string;
   licenseExpiry?: string;
-  licensePhotoUrl?: string | null; // Simulated Cloudinary URL
+  licensePhotoUrl?: string | null; // Simulated ImageKit URL
   vehicleType?: string;
   vehicleMakeModel?: string;
   vehicleYear?: string;
   vehicleColor?: string;
   vehiclePlateNumber?: string;
-  vehiclePhotosUrl?: string | null; // Simulated Cloudinary URL
+  vehiclePhotosUrl?: string | null; // Simulated ImageKit URL
   rating?: number;
   tripsCount?: number;
   paymentMethods?: {
@@ -145,14 +145,10 @@ export const getTripById = async (tripId: string): Promise<Trip | null> => {
 
 
 export const getActiveTripForDriver = async (driverId: string): Promise<Trip | null> => {
-  // WORKAROUND for missing Firebase index on 'driverId' in 'currentTrips'.
-  // This fetches ALL current trips and filters client-side.
-  // THIS IS INEFFICIENT FOR LARGE DATASETS.
-  // The proper fix is to add ".indexOn": "driverId" to your Firebase Realtime Database rules for the 'currentTrips' path.
   console.warn("[WORKAROUND] Fetching all current trips and filtering client-side due to missing Firebase index. Add '.indexOn': 'driverId' to 'currentTrips' rules for better performance.");
   
   const tripsRef = ref(database, CURRENT_TRIPS_PATH);
-  const snapshot = await get(tripsRef); // Fetch all trips under CURRENT_TRIPS_PATH
+  const snapshot = await get(tripsRef); 
 
   if (snapshot.exists()) {
     let activeTrip: Trip | null = null;
@@ -161,7 +157,7 @@ export const getActiveTripForDriver = async (driverId: string): Promise<Trip | n
       if (trip.driverId === driverId && (trip.status === 'upcoming' || trip.status === 'ongoing')) {
         activeTrip = trip;
         // @ts-ignore allow forEach break
-        return true; // Break loop (forEach doesn't truly break, but this is a common pattern)
+        return true; 
       }
     });
     return activeTrip;
@@ -170,14 +166,10 @@ export const getActiveTripForDriver = async (driverId: string): Promise<Trip | n
 };
 
 export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Promise<Trip[]> => {
-  // WORKAROUND for missing Firebase index on 'driverId' in 'currentTrips'.
-  // This fetches ALL current trips and filters client-side.
-  // THIS IS INEFFICIENT FOR LARGE DATASETS.
-  // The proper fix is to add ".indexOn": "driverId" to your Firebase Realtime Database rules for the 'currentTrips' path.
    console.warn("[WORKAROUND] Fetching all current trips and filtering client-side due to missing Firebase index. Add '.indexOn': 'driverId' to 'currentTrips' rules for better performance.");
 
   const tripsRef = ref(database, CURRENT_TRIPS_PATH);
-  const snapshot = await get(tripsRef); // Fetch all trips
+  const snapshot = await get(tripsRef); 
   const trips: Trip[] = [];
 
   if (snapshot.exists()) {
@@ -192,10 +184,6 @@ export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Pro
 };
 
 export const getCompletedTripsForDriver = async (driverId: string): Promise<Trip[]> => {
-  // NOTE: If you query finishedTrips by driverId frequently, you should also add
-  // ".indexOn": "driverId" to your Firebase rules for the 'finishedTrips/{driverId}' path,
-  // or structure 'finishedTrips' so that driverId is a top-level key.
-  // Current implementation fetches all trips for a specific driver under 'finishedTrips/{driverId}'.
   const tripsRef = ref(database, `${FINISHED_TRIPS_PATH}/${driverId}`);
   const snapshot = await get(tripsRef);
   const trips: Trip[] = [];
@@ -204,7 +192,6 @@ export const getCompletedTripsForDriver = async (driverId: string): Promise<Trip
       trips.push(childSnapshot.val() as Trip);
     });
   }
-  // Sort by date, most recent first
   return trips.sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());
 };
 
@@ -212,10 +199,7 @@ export const endTrip = async (trip: Trip): Promise<void> => {
   if (!trip || !trip.driverId || !trip.id) {
     throw new Error("Invalid trip data for ending trip.");
   }
-  // 1. Calculate earnings (simplified)
   const earnings = (trip.selectedSeats?.length || 0) * trip.pricePerPassenger;
-
-  // 2. Update trip status and earnings
   const updatedTripData: Partial<Trip> = {
     status: 'completed',
     earnings: earnings,
@@ -224,25 +208,13 @@ export const endTrip = async (trip: Trip): Promise<void> => {
   
   const finishedTripRef = ref(database, `${FINISHED_TRIPS_PATH}/${trip.driverId}/${trip.id}`);
   const originalTripRef = ref(database, `${CURRENT_TRIPS_PATH}/${trip.id}`);
-
   const finalTripDataForFinished = { ...trip, ...updatedTripData };
 
-  // Using a multi-path update to move and update atomically is safer if possible,
-  // but for simplicity, we'll set to new location and remove from old.
   await set(finishedTripRef, finalTripDataForFinished);
   await remove(originalTripRef);
-
-  // Potentially update driver's total trips/earnings in their profile (complex, skipped for now)
 };
 
-// Legacy functions from storage.ts that might be called by components
-// These should be deprecated in favor of direct Firebase calls or specific service functions
 export const getTrips = async (): Promise<Trip[]> => {
-  // This function is problematic without a driverId.
-  // Assuming it's for a generic "all current trips" view (not typical for driver app)
-  // or needs refactoring to accept driverId.
-  // For now, let's assume it fetches ALL current trips.
-  // This is NOT what the driver app usually needs for "my trips".
   const tripsRef = ref(database, CURRENT_TRIPS_PATH);
   const snapshot = await get(tripsRef);
   const trips: Trip[] = [];
@@ -254,29 +226,31 @@ export const getTrips = async (): Promise<Trip[]> => {
   return trips;
 };
 
-
-// --- Utility to simulate Cloudinary URL ---
 /**
- * [AR] محاكاة لعملية رفع صورة إلى Cloudinary. هذه الدالة **لا تقوم برفع فعلي للملفات**.
+ * [AR] محاكاة لعملية رفع صورة إلى ImageKit. هذه الدالة **لا تقوم برفع فعلي للملفات**.
  * بدلاً من ذلك، هي تنشئ رابط URL وهمي بناءً على اسم الملف المدخل،
- * ليتم حفظه في Firebase Realtime Database كأنه رابط صورة حقيقي من Cloudinary.
- * في تطبيق حقيقي، ستحتاج إلى استخدام Cloudinary SDK وربما خادم وسيط لرفع الملفات بأمان.
+ * ليتم حفظه في Firebase Realtime Database كأنه رابط صورة حقيقي من ImageKit.
+ * في تطبيق حقيقي، ستحتاج إلى استخدام ImageKit SDK وربما خادم وسيط لرفع الملفات بأمان.
+ * **ملاحظة:** يرجى استبدال "YOUR_IMAGEKIT_ID" بمعرف ImageKit الفعلي الخاص بك.
  * @param fileName اسم الملف المراد "رفعه" (مثل "my-image.jpg").
- * @returns رابط URL مُحاكى لـ Cloudinary.
+ * @returns رابط URL مُحاكى لـ ImageKit.
  */
-export const simulateCloudinaryUpload = (fileName: string = "sample.jpg"): string => {
-  const cloudName = "dorbgzcrz"; // Your Cloudinary cloud name
-  const version = `v${Math.floor(Date.now() / 1000)}`; // Unix timestamp for version
-  
+export const simulateImageKitUpload = (fileName: string = "sample.jpg"): string => {
+  const imageKitId = "YOUR_IMAGEKIT_ID"; // <--- استبدل هذا بمعرف ImageKit الخاص بك
+  const uploadFolder = "uploads"; // يمكنك تغيير هذا إذا كنت تستخدم مجلدًا مختلفًا في ImageKit
+
   // Extract filename without extension for public_id
   const nameParts = fileName.split('.');
   const extension = nameParts.pop() || 'jpg'; // Default to jpg if no extension
-  const baseName = nameParts.join('.').replace(/[^a-zA-Z0-9_.-]/g, '_'); // Sanitize basename to common URL safe characters
+  const baseName = nameParts.join('.').replace(/[^a-zA-Z0-9_.-]/g, '_'); // Sanitize basename
+
+  // Create a unique-ish filename by appending a short random string and timestamp component.
+  const uniqueFileName = `${baseName}_${Math.random().toString(36).substring(2, 7)}_${Date.now()}`;
   
-  // Create a more unique public_id by appending a short random string to the sanitized base name.
-  const publicId = `${baseName}_${Math.random().toString(36).substring(2, 8)}`;
-  
-  console.log(`[SIMULATE UPLOAD] Generated URL for ${fileName}: https://res.cloudinary.com/${cloudName}/image/upload/${version}/${publicId}.${extension}`);
-  return `https://res.cloudinary.com/${cloudName}/image/upload/${version}/${publicId}.${extension}`;
+  const generatedUrl = `https://ik.imagekit.io/${imageKitId}/${uploadFolder}/${uniqueFileName}.${extension}`;
+  console.log(`[SIMULATE IMAGEKIT UPLOAD] Generated URL for ${fileName}: ${generatedUrl}`);
+  return generatedUrl;
 };
 
+// For backward compatibility if any component still uses it, though it should be updated
+export const simulateCloudinaryUpload = simulateImageKitUpload;
