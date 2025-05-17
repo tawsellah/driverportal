@@ -10,13 +10,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { User, Mail, Phone, Star, Briefcase, Car, Edit3, Save, Loader2, Check, X } from 'lucide-react';
+import { User, Mail, Phone, Star, Briefcase, Car, Edit3, Save, Loader2, Check, X, LogOut } from 'lucide-react'; // Added LogOut
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
 import { VEHICLE_TYPES, JORDAN_GOVERNORATES } from '@/lib/constants';
 import { format } from 'date-fns';
 import { auth } from '@/lib/firebase';
+import { signOut } from 'firebase/auth'; // Added signOut from firebase/auth
+import { useRouter } from 'next/navigation'; // Added useRouter
 import { getUserProfile, updateUserProfile, type UserProfile, simulateCloudinaryUpload } from '@/lib/firebaseService';
+import { setAuthStatus } from '@/lib/storage'; // Added setAuthStatus
 import { Checkbox } from "@/components/ui/checkbox";
 
 const profileSchema = z.object({
@@ -34,6 +37,7 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 
 export default function ProfilePage() {
   const { toast } = useToast();
+  const router = useRouter(); // Initialize router
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -72,11 +76,12 @@ export default function ProfilePage() {
         }
       } else {
         toast({ title: "لم يتم العثور على الملف الشخصي أو المستخدم غير مسجل", variant: "destructive" });
+        router.push('/auth/signin'); // Redirect if not logged in
       }
       setIsFetchingProfile(false);
     };
     fetchProfile();
-  }, [reset, toast]);
+  }, [reset, toast, router]);
 
   const paymentMethodsWatched = watch("paymentMethods");
 
@@ -92,7 +97,6 @@ export default function ProfilePage() {
     
     let updatedPhotoUrl: string | null = userProfile.idPhotoUrl || null;
     if (newPhotoFile) {
-      // In a real app, upload newPhotoFile to Cloudinary and get the URL
       updatedPhotoUrl = simulateCloudinaryUpload(newPhotoFile.name); 
     }
 
@@ -102,7 +106,6 @@ export default function ProfilePage() {
       paymentMethods: {
         cash: data.paymentMethods?.cash || false,
         click: data.paymentMethods?.click || false,
-        // Only save clickCode if click is enabled, otherwise save empty or null
         clickCode: data.paymentMethods?.click ? (data.paymentMethods?.clickCode || '') : '',
       },
       idPhotoUrl: updatedPhotoUrl,
@@ -128,6 +131,18 @@ export default function ProfilePage() {
       toast({ title: "خطأ في تحديث الملف الشخصي", variant: "destructive" });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      setAuthStatus(false); // Update client-side auth status
+      toast({ title: "تم تسجيل الخروج بنجاح." });
+      router.push('/auth/signin');
+    } catch (error) {
+      console.error("Sign Out Error:", error);
+      toast({ title: "خطأ أثناء تسجيل الخروج", variant: "destructive" });
     }
   };
   
@@ -298,7 +313,7 @@ export default function ProfilePage() {
              <Button onClick={() => { 
                 setIsEditing(false); 
                 setNewPhotoFile(null); 
-                if(userProfile) { // Reset form to original profile data
+                if(userProfile) { 
                     reset({ 
                         fullName: userProfile.fullName, 
                         phone: userProfile.phone, 
@@ -310,6 +325,9 @@ export default function ProfilePage() {
                إلغاء
             </Button>
           )}
+           <Button onClick={handleSignOut} variant="destructive" className="w-full mt-2">
+            <LogOut className="ms-2 h-4 w-4" /> تسجيل الخروج
+          </Button>
         </CardFooter>
       </Card>
     </div>
