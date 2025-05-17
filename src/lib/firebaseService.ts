@@ -149,7 +149,7 @@ export const getActiveTripForDriver = async (driverId: string): Promise<Trip | n
   // This fetches ALL current trips and filters client-side.
   // THIS IS INEFFICIENT FOR LARGE DATASETS.
   // The proper fix is to add ".indexOn": "driverId" to your Firebase Realtime Database rules for the 'currentTrips' path.
-  console.warn("Fetching all current trips due to missing Firebase index. Add '.indexOn': 'driverId' to 'currentTrips' rules for better performance.");
+  console.warn("[WORKAROUND] Fetching all current trips and filtering client-side due to missing Firebase index. Add '.indexOn': 'driverId' to 'currentTrips' rules for better performance.");
   
   const tripsRef = ref(database, CURRENT_TRIPS_PATH);
   const snapshot = await get(tripsRef); // Fetch all trips under CURRENT_TRIPS_PATH
@@ -173,7 +173,7 @@ export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Pro
   // This fetches ALL current trips and filters client-side.
   // THIS IS INEFFICIENT FOR LARGE DATASETS.
   // The proper fix is to add ".indexOn": "driverId" to your Firebase Realtime Database rules for the 'currentTrips' path.
-  console.warn("Fetching all current trips due to missing Firebase index. Add '.indexOn': 'driverId' to 'currentTrips' rules for better performance.");
+   console.warn("[WORKAROUND] Fetching all current trips and filtering client-side due to missing Firebase index. Add '.indexOn': 'driverId' to 'currentTrips' rules for better performance.");
 
   const tripsRef = ref(database, CURRENT_TRIPS_PATH);
   const snapshot = await get(tripsRef); // Fetch all trips
@@ -255,7 +255,14 @@ export const getTrips = async (): Promise<Trip[]> => {
 
 
 // --- Utility to simulate Cloudinary URL ---
-// Replace with actual Cloudinary upload logic in a real app (likely via backend)
+/**
+ * [AR] محاكاة لعملية رفع صورة إلى Cloudinary.
+ * في تطبيق حقيقي، ستحتاج إلى استخدام Cloudinary SDK أو واجهة API لرفع الملفات فعليًا.
+ * هذه الدالة تقوم فقط بإنشاء رابط URL وهمي بناءً على اسم الملف المدخل،
+ * ليتم حفظه في Firebase Realtime Database كأنه رابط صورة حقيقي.
+ * @param fileName اسم الملف المراد "رفعه" (مثل "my-image.jpg").
+ * @returns رابط URL مُحاكى لـ Cloudinary.
+ */
 export const simulateCloudinaryUpload = (fileName: string = "sample.jpg"): string => {
   const cloudName = "dorbgzcrz"; // Your Cloudinary cloud name
   const version = `v${Math.floor(Date.now() / 1000)}`; // Unix timestamp for version
@@ -263,9 +270,10 @@ export const simulateCloudinaryUpload = (fileName: string = "sample.jpg"): strin
   // Extract filename without extension for public_id
   const nameParts = fileName.split('.');
   const extension = nameParts.pop() || 'jpg'; // Default to jpg if no extension
-  const baseName = nameParts.join('.');
+  const baseName = nameParts.join('.').replace(/[^a-zA-Z0-9_.-]/g, '_'); // Sanitize basename to common URL safe characters
   
-  // Create a more unique public_id by appending a short random string
+  // Create a more unique public_id by appending a short random string to the sanitized base name.
+  // This helps avoid collisions if multiple users upload files with the same name.
   const publicId = `${baseName}_${Math.random().toString(36).substring(2, 8)}`;
   
   return `https://res.cloudinary.com/${cloudName}/image/upload/${version}/${publicId}.${extension}`;
