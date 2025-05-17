@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { User, Mail, Phone, Star, Briefcase, Car, Edit3, Save, Loader2, Check, X, LogOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 // import Image from 'next/image'; // Not used directly, AvatarImage handles next/image capabilities
@@ -18,7 +18,7 @@ import { format } from 'date-fns';
 import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
-import { getUserProfile, updateUserProfile, type UserProfile, simulateImageKitUpload } from '@/lib/firebaseService'; // Updated import
+import { getUserProfile, updateUserProfile, type UserProfile, simulateImageKitUpload } from '@/lib/firebaseService'; 
 import { setAuthStatus } from '@/lib/storage';
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -30,7 +30,7 @@ const profileSchema = z.object({
     click: z.boolean().optional().default(false),
     clickCode: z.string().optional().nullable(),
   }).optional(),
-  idPhotoUrl: z.string().url().or(z.literal("")).optional().nullable(), // No direct validation for file upload here
+  idPhotoUrl: z.string().url().or(z.literal("")).optional().nullable(), 
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -97,7 +97,7 @@ export default function ProfilePage() {
     
     let updatedPhotoUrl: string | null = userProfile.idPhotoUrl || null;
     if (newPhotoFile) {
-      updatedPhotoUrl = simulateImageKitUpload(newPhotoFile.name); // Use ImageKit simulation
+      updatedPhotoUrl = simulateImageKitUpload(newPhotoFile.name); 
       console.log("[SIMULATE UPLOAD] Generated ImageKit URL for profile photo:", updatedPhotoUrl);
     }
 
@@ -116,7 +116,7 @@ export default function ProfilePage() {
       await updateUserProfile(auth.currentUser.uid, updates);
       const refreshedProfile = await getUserProfile(auth.currentUser.uid);
       console.log("[DEBUG] Refreshed profile idPhotoUrl after save:", refreshedProfile?.idPhotoUrl); 
-      setUserProfile(refreshedProfile);
+      setUserProfile(refreshedProfile); // Ensure userProfile state is updated
        if (refreshedProfile) {
           reset({ 
             fullName: refreshedProfile.fullName,
@@ -125,7 +125,7 @@ export default function ProfilePage() {
             idPhotoUrl: refreshedProfile.idPhotoUrl || null, 
           });
         }
-      setNewPhotoFile(null);
+      setNewPhotoFile(null); // Clear the preview file
       setIsEditing(false);
       toast({ title: "تم تحديث الملف الشخصي بنجاح!" });
     } catch (error) {
@@ -166,7 +166,7 @@ export default function ProfilePage() {
   if (newPhotoFile) {
     avatarSrc = URL.createObjectURL(newPhotoFile); // Preview new file
   } else if (userProfile && userProfile.idPhotoUrl) { 
-    avatarSrc = userProfile.idPhotoUrl; // Use saved URL
+    avatarSrc = userProfile.idPhotoUrl; // Use saved URL from state
   }
 
 
@@ -175,6 +175,7 @@ export default function ProfilePage() {
       <Card>
         <CardHeader className="flex flex-col items-center text-center">
           <Avatar className="w-24 h-24 mb-4 border-2 border-primary">
+            {/* Ensure key changes when avatarSrc changes to force re-render */}
             <AvatarImage 
               key={avatarSrc} 
               src={avatarSrc} 
@@ -326,7 +327,7 @@ export default function ProfilePage() {
           {isEditing && (
              <Button onClick={() => { 
                 setIsEditing(false); 
-                setNewPhotoFile(null);
+                setNewPhotoFile(null); // Clear preview if cancelling edit
                 if(userProfile) { 
                     reset({ 
                         fullName: userProfile.fullName, 
@@ -347,4 +348,6 @@ export default function ProfilePage() {
     </div>
   );
 }
+    
+
     
