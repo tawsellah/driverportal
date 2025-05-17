@@ -10,16 +10,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { User, Mail, Phone, Star, Briefcase, Car, Edit3, Save, Loader2, Check, X, LogOut } from 'lucide-react'; // Added LogOut
+import { User, Mail, Phone, Star, Briefcase, Car, Edit3, Save, Loader2, Check, X, LogOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
 import { VEHICLE_TYPES, JORDAN_GOVERNORATES } from '@/lib/constants';
 import { format } from 'date-fns';
 import { auth } from '@/lib/firebase';
-import { signOut } from 'firebase/auth'; // Added signOut from firebase/auth
-import { useRouter } from 'next/navigation'; // Added useRouter
+import { signOut } from 'firebase/auth';
+import { useRouter } from 'next/navigation';
 import { getUserProfile, updateUserProfile, type UserProfile, simulateCloudinaryUpload } from '@/lib/firebaseService';
-import { setAuthStatus } from '@/lib/storage'; // Added setAuthStatus
+import { setAuthStatus } from '@/lib/storage';
 import { Checkbox } from "@/components/ui/checkbox";
 
 const profileSchema = z.object({
@@ -37,7 +37,7 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 
 export default function ProfilePage() {
   const { toast } = useToast();
-  const router = useRouter(); // Initialize router
+  const router = useRouter();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -55,7 +55,7 @@ export default function ProfilePage() {
             click: false,
             clickCode: '',
         },
-        idPhotoUrl: null, // Initialize with null for clarity
+        idPhotoUrl: null,
     }
   });
 
@@ -76,7 +76,7 @@ export default function ProfilePage() {
         }
       } else {
         toast({ title: "لم يتم العثور على الملف الشخصي أو المستخدم غير مسجل", variant: "destructive" });
-        router.push('/auth/signin'); // Redirect if not logged in
+        router.push('/auth/signin');
       }
       setIsFetchingProfile(false);
     };
@@ -97,9 +97,8 @@ export default function ProfilePage() {
     
     let updatedPhotoUrl: string | null = userProfile.idPhotoUrl || null;
     if (newPhotoFile) {
-      // This is the key part for the simulation
       updatedPhotoUrl = simulateCloudinaryUpload(newPhotoFile.name); 
-      console.log("New simulated photo URL:", updatedPhotoUrl);
+      // console.log from simulateCloudinaryUpload will show the generated URL
     }
 
     const updates: Partial<UserProfile> = {
@@ -110,15 +109,15 @@ export default function ProfilePage() {
         click: data.paymentMethods?.click || false,
         clickCode: data.paymentMethods?.click ? (data.paymentMethods?.clickCode || '') : '',
       },
-      idPhotoUrl: updatedPhotoUrl, // This will be the new simulated URL or the existing one
+      idPhotoUrl: updatedPhotoUrl,
     };
 
     try {
       await updateUserProfile(auth.currentUser.uid, updates);
-      const refreshedProfile = await getUserProfile(auth.currentUser.uid); // Fetch updated profile
-      setUserProfile(refreshedProfile); // Update local state for userProfile
+      const refreshedProfile = await getUserProfile(auth.currentUser.uid);
+      console.log("[DEBUG] Refreshed profile idPhotoUrl after save:", refreshedProfile?.idPhotoUrl); // DEBUGGING LINE
+      setUserProfile(refreshedProfile);
        if (refreshedProfile) {
-          // Reset form with new data, including the new simulated idPhotoUrl
           reset({ 
             fullName: refreshedProfile.fullName,
             phone: refreshedProfile.phone,
@@ -126,7 +125,7 @@ export default function ProfilePage() {
             idPhotoUrl: refreshedProfile.idPhotoUrl || null, 
           });
         }
-      setNewPhotoFile(null); // Clear the selected file, so AvatarImage uses userProfile.idPhotoUrl
+      setNewPhotoFile(null);
       setIsEditing(false);
       toast({ title: "تم تحديث الملف الشخصي بنجاح!" });
     } catch (error) {
@@ -140,7 +139,7 @@ export default function ProfilePage() {
   const handleSignOut = async () => {
     try {
       await signOut(auth);
-      setAuthStatus(false); // Update client-side auth status
+      setAuthStatus(false);
       toast({ title: "تم تسجيل الخروج بنجاح." });
       router.push('/auth/signin');
     } catch (error) {
@@ -163,12 +162,11 @@ export default function ProfilePage() {
   
   const vehicleTypeName = VEHICLE_TYPES.find(vt => vt.id === userProfile.vehicleType)?.name || userProfile.vehicleType || 'غير محدد';
   
-  // Determine the image source for the avatar
-  let avatarSrc = "https://placehold.co/100x100.png?text=S"; // Default placeholder
+  let avatarSrc = "https://placehold.co/100x100.png?text=S";
   if (newPhotoFile) {
-    avatarSrc = URL.createObjectURL(newPhotoFile); // Preview new file
-  } else if (userProfile.idPhotoUrl) {
-    avatarSrc = userProfile.idPhotoUrl; // Use URL from profile if available
+    avatarSrc = URL.createObjectURL(newPhotoFile);
+  } else if (userProfile && userProfile.idPhotoUrl) { // Added userProfile check
+    avatarSrc = userProfile.idPhotoUrl;
   }
 
   return (
@@ -177,8 +175,9 @@ export default function ProfilePage() {
         <CardHeader className="flex flex-col items-center text-center">
           <Avatar className="w-24 h-24 mb-4 border-2 border-primary">
             <AvatarImage 
+              key={avatarSrc} // Added key to force re-render
               src={avatarSrc} 
-              alt={userProfile.fullName}
+              alt={userProfile.fullName || 'Driver'}
               data-ai-hint="driver portrait" />
             <AvatarFallback>{userProfile.fullName?.charAt(0) || 'S'}</AvatarFallback>
           </Avatar>
@@ -296,7 +295,7 @@ export default function ProfilePage() {
                 <Label htmlFor="paymentClick" className="font-normal cursor-pointer">CliQ (كليك)</Label>
               </div>
               {paymentMethodsWatched?.click && (
-                <div className="ps-7 pt-2"> {/* Indent CliQ code input */}
+                <div className="ps-7 pt-2">
                   <Label htmlFor="clickCode">معرّف CliQ الخاص بك</Label>
                   <Input 
                     id="clickCode" 
@@ -326,9 +325,8 @@ export default function ProfilePage() {
           {isEditing && (
              <Button onClick={() => { 
                 setIsEditing(false); 
-                setNewPhotoFile(null); // Clear any selected file preview on cancel
+                setNewPhotoFile(null);
                 if(userProfile) { 
-                    // Reset form to original userProfile values
                     reset({ 
                         fullName: userProfile.fullName, 
                         phone: userProfile.phone, 
@@ -348,3 +346,6 @@ export default function ProfilePage() {
     </div>
   );
 }
+
+
+    
