@@ -160,6 +160,7 @@ export const getActiveTripForDriver = async (driverId: string): Promise<Trip | n
       const trip = childSnapshot.val() as Trip;
       if (trip.driverId === driverId && (trip.status === 'upcoming' || trip.status === 'ongoing')) {
         activeTrip = trip;
+        // @ts-ignore allow forEach break
         return true; // Break loop (forEach doesn't truly break, but this is a common pattern)
       }
     });
@@ -256,10 +257,10 @@ export const getTrips = async (): Promise<Trip[]> => {
 
 // --- Utility to simulate Cloudinary URL ---
 /**
- * [AR] محاكاة لعملية رفع صورة إلى Cloudinary.
- * في تطبيق حقيقي، ستحتاج إلى استخدام Cloudinary SDK أو واجهة API لرفع الملفات فعليًا.
- * هذه الدالة تقوم فقط بإنشاء رابط URL وهمي بناءً على اسم الملف المدخل،
- * ليتم حفظه في Firebase Realtime Database كأنه رابط صورة حقيقي.
+ * [AR] محاكاة لعملية رفع صورة إلى Cloudinary. هذه الدالة **لا تقوم برفع فعلي للملفات**.
+ * بدلاً من ذلك، هي تنشئ رابط URL وهمي بناءً على اسم الملف المدخل،
+ * ليتم حفظه في Firebase Realtime Database كأنه رابط صورة حقيقي من Cloudinary.
+ * في تطبيق حقيقي، ستحتاج إلى استخدام Cloudinary SDK وربما خادم وسيط لرفع الملفات بأمان.
  * @param fileName اسم الملف المراد "رفعه" (مثل "my-image.jpg").
  * @returns رابط URL مُحاكى لـ Cloudinary.
  */
@@ -273,9 +274,9 @@ export const simulateCloudinaryUpload = (fileName: string = "sample.jpg"): strin
   const baseName = nameParts.join('.').replace(/[^a-zA-Z0-9_.-]/g, '_'); // Sanitize basename to common URL safe characters
   
   // Create a more unique public_id by appending a short random string to the sanitized base name.
-  // This helps avoid collisions if multiple users upload files with the same name.
   const publicId = `${baseName}_${Math.random().toString(36).substring(2, 8)}`;
   
+  console.log(`[SIMULATE UPLOAD] Generated URL for ${fileName}: https://res.cloudinary.com/${cloudName}/image/upload/${version}/${publicId}.${extension}`);
   return `https://res.cloudinary.com/${cloudName}/image/upload/${version}/${publicId}.${extension}`;
 };
 

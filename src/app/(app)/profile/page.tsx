@@ -55,7 +55,7 @@ export default function ProfilePage() {
             click: false,
             clickCode: '',
         },
-        idPhotoUrl: '',
+        idPhotoUrl: null, // Initialize with null for clarity
     }
   });
 
@@ -71,7 +71,7 @@ export default function ProfilePage() {
             fullName: profile.fullName,
             phone: profile.phone,
             paymentMethods: profile.paymentMethods || { cash: true, click: false, clickCode: '' },
-            idPhotoUrl: profile.idPhotoUrl || '',
+            idPhotoUrl: profile.idPhotoUrl || null,
           });
         }
       } else {
@@ -97,7 +97,9 @@ export default function ProfilePage() {
     
     let updatedPhotoUrl: string | null = userProfile.idPhotoUrl || null;
     if (newPhotoFile) {
+      // This is the key part for the simulation
       updatedPhotoUrl = simulateCloudinaryUpload(newPhotoFile.name); 
+      console.log("New simulated photo URL:", updatedPhotoUrl);
     }
 
     const updates: Partial<UserProfile> = {
@@ -108,22 +110,23 @@ export default function ProfilePage() {
         click: data.paymentMethods?.click || false,
         clickCode: data.paymentMethods?.click ? (data.paymentMethods?.clickCode || '') : '',
       },
-      idPhotoUrl: updatedPhotoUrl,
+      idPhotoUrl: updatedPhotoUrl, // This will be the new simulated URL or the existing one
     };
 
     try {
       await updateUserProfile(auth.currentUser.uid, updates);
-      const refreshedProfile = await getUserProfile(auth.currentUser.uid);
-      setUserProfile(refreshedProfile);
+      const refreshedProfile = await getUserProfile(auth.currentUser.uid); // Fetch updated profile
+      setUserProfile(refreshedProfile); // Update local state for userProfile
        if (refreshedProfile) {
+          // Reset form with new data, including the new simulated idPhotoUrl
           reset({ 
             fullName: refreshedProfile.fullName,
             phone: refreshedProfile.phone,
             paymentMethods: refreshedProfile.paymentMethods || { cash: true, click: false, clickCode: '' },
-            idPhotoUrl: refreshedProfile.idPhotoUrl || '',
+            idPhotoUrl: refreshedProfile.idPhotoUrl || null, 
           });
         }
-      setNewPhotoFile(null);
+      setNewPhotoFile(null); // Clear the selected file, so AvatarImage uses userProfile.idPhotoUrl
       setIsEditing(false);
       toast({ title: "تم تحديث الملف الشخصي بنجاح!" });
     } catch (error) {
@@ -159,6 +162,14 @@ export default function ProfilePage() {
   }
   
   const vehicleTypeName = VEHICLE_TYPES.find(vt => vt.id === userProfile.vehicleType)?.name || userProfile.vehicleType || 'غير محدد';
+  
+  // Determine the image source for the avatar
+  let avatarSrc = "https://placehold.co/100x100.png?text=S"; // Default placeholder
+  if (newPhotoFile) {
+    avatarSrc = URL.createObjectURL(newPhotoFile); // Preview new file
+  } else if (userProfile.idPhotoUrl) {
+    avatarSrc = userProfile.idPhotoUrl; // Use URL from profile if available
+  }
 
   return (
     <div className="space-y-6">
@@ -166,15 +177,18 @@ export default function ProfilePage() {
         <CardHeader className="flex flex-col items-center text-center">
           <Avatar className="w-24 h-24 mb-4 border-2 border-primary">
             <AvatarImage 
-              src={newPhotoFile ? URL.createObjectURL(newPhotoFile) : userProfile.idPhotoUrl || "https://placehold.co/100x100.png?text=S"} 
+              src={avatarSrc} 
               alt={userProfile.fullName}
               data-ai-hint="driver portrait" />
             <AvatarFallback>{userProfile.fullName?.charAt(0) || 'S'}</AvatarFallback>
           </Avatar>
           {isEditing && (
             <div className="mb-2 w-full max-w-xs">
-              <Label htmlFor="newIdPhoto">تغيير الصورة الشخصية</Label>
+              <Label htmlFor="newIdPhoto">تغيير الصورة الشخصية (محاكاة)</Label>
               <Input id="newIdPhoto" type="file" accept="image/*" onChange={handlePhotoChange} />
+              <p className="mt-1 text-xs text-muted-foreground">
+                ملاحظة: يتم محاكاة رفع الصورة. سيتم إنشاء رابط وحفظه.
+              </p>
             </div>
           )}
           <CardTitle className="text-2xl">{userProfile.fullName}</CardTitle>
@@ -312,13 +326,14 @@ export default function ProfilePage() {
           {isEditing && (
              <Button onClick={() => { 
                 setIsEditing(false); 
-                setNewPhotoFile(null); 
+                setNewPhotoFile(null); // Clear any selected file preview on cancel
                 if(userProfile) { 
+                    // Reset form to original userProfile values
                     reset({ 
                         fullName: userProfile.fullName, 
                         phone: userProfile.phone, 
                         paymentMethods: userProfile.paymentMethods || { cash: true, click: false, clickCode: '' }, 
-                        idPhotoUrl: userProfile.idPhotoUrl || '' 
+                        idPhotoUrl: userProfile.idPhotoUrl || null 
                     });
                 }
              }} variant="outline" className="w-full">
@@ -333,4 +348,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-
