@@ -258,10 +258,16 @@ export const getTrips = async (): Promise<Trip[]> => {
 // Replace with actual Cloudinary upload logic in a real app (likely via backend)
 export const simulateCloudinaryUpload = (fileName: string = "sample.jpg"): string => {
   const cloudName = "dorbgzcrz"; // Your Cloudinary cloud name
-  // Simulate a version and public ID for variety, or use a fixed one
-  const version = `v${Date.now().toString().slice(0, 10)}`;
-  const publicId = fileName.split('.')[0] + '_' + Math.random().toString(36).substring(2, 8);
-  // return `https://res.cloudinary.com/${cloudName}/image/upload/${version}/${publicId}.${fileName.split('.').pop()}`;
-  return `https://placehold.co/300x200.png?text=${encodeURIComponent(fileName)}`; // Simpler placeholder
+  const version = `v${Math.floor(Date.now() / 1000)}`; // Unix timestamp for version
+  
+  // Extract filename without extension for public_id
+  const nameParts = fileName.split('.');
+  const extension = nameParts.pop() || 'jpg'; // Default to jpg if no extension
+  const baseName = nameParts.join('.');
+  
+  // Create a more unique public_id by appending a short random string
+  const publicId = `${baseName}_${Math.random().toString(36).substring(2, 8)}`;
+  
+  return `https://res.cloudinary.com/${cloudName}/image/upload/${version}/${publicId}.${extension}`;
 };
 
