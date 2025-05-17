@@ -4,14 +4,14 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
-import { onAuthUserChanged } from '@/lib/firebaseService'; // Using Firebase auth state
+import { onAuthUserChangedListener } from '@/lib/firebaseService'; // Using Firebase auth state
 
 export default function HomePage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthUserChanged((user) => {
+    const unsubscribe = onAuthUserChangedListener((user) => {
       if (user) {
         // User is signed in, redirect to trips page.
         router.replace('/trips');
@@ -33,3 +33,4 @@ export default function HomePage() {
     </div>
   );
 }
+

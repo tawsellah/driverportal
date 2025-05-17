@@ -1,7 +1,7 @@
 
 "use client";
 
-import { auth, database } from './firebase';
+import { auth as authInternal , database as databaseInternal } from './firebase'; // Renamed to avoid conflict with exported auth
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
@@ -11,23 +11,28 @@ import {
 import { ref, set, get, child, update, remove, query, orderByChild, equalTo, serverTimestamp } from 'firebase/database';
 import type { SeatID } from './constants';
 
+// Re-export auth from firebase for direct use if needed elsewhere, or components can import from here
+export const auth = authInternal;
+export const database = databaseInternal;
+
+
 // User Profile Interface
 export interface UserProfile {
-  id: string; // Firebase Auth UID
+  id: string; 
   fullName: string;
-  email: string; // The t-prefixed email
-  phone: string; // Original phone number
+  email: string; 
+  phone: string; 
   idNumber?: string;
-  idPhotoUrl?: string | null; // Simulated ImageKit URL
+  idPhotoUrl?: string | null; 
   licenseNumber?: string;
   licenseExpiry?: string;
-  licensePhotoUrl?: string | null; // Simulated ImageKit URL
+  licensePhotoUrl?: string | null; 
   vehicleType?: string;
   vehicleMakeModel?: string;
   vehicleYear?: string;
   vehicleColor?: string;
   vehiclePlateNumber?: string;
-  vehiclePhotosUrl?: string | null; // Simulated ImageKit URL
+  vehiclePhotosUrl?: string | null; // Can be an array of URLs in future if needed
   rating?: number;
   tripsCount?: number;
   paymentMethods?: {
@@ -35,18 +40,18 @@ export interface UserProfile {
     cash?: boolean;
     clickCode?: string;
   };
-  createdAt: any; // Firebase Server Timestamp
+  createdAt: any; 
 }
 
 // Trip Interface
 export interface Trip {
-  id: string; // Unique trip ID
-  driverId: string; // Firebase Auth UID of the driver
-  startPoint: string; // Governorate ID
-  stops?: string[]; // Array of Governorate IDs
-  destination: string; // Governorate ID
-  dateTime: string; // ISO string
-  expectedArrivalTime: string; // time string e.g., "10:00"
+  id: string; 
+  driverId: string; 
+  startPoint: string; 
+  stops?: string[]; 
+  destination: string; 
+  dateTime: string; 
+  expectedArrivalTime: string; 
   offeredSeatIds: SeatID[];
   selectedSeats: SeatID[];
   meetingPoint: string;
@@ -54,25 +59,26 @@ export interface Trip {
   notes?: string;
   status: 'upcoming' | 'ongoing' | 'completed' | 'cancelled';
   earnings?: number;
-  passengers?: any[]; // Simplified for now
-  createdAt: any; // Firebase Server Timestamp
-  updatedAt?: any; // Firebase Server Timestamp
+  passengers?: any[]; 
+  createdAt: any; 
+  updatedAt?: any; 
 }
 
 export type NewTripData = Omit<Trip, 'id' | 'status' | 'selectedSeats' | 'passengers' | 'earnings' | 'driverId' | 'createdAt' | 'updatedAt'>;
 
 // --- Auth Service ---
 export const getCurrentUser = (): FirebaseAuthUser | null => {
-  return auth.currentUser;
+  return authInternal.currentUser;
 };
 
-export const onAuthUserChanged = (callback: (user: FirebaseAuthUser | null) => void) => {
-  return onAuthStateChanged(auth, callback);
+export const onAuthUserChangedListener = (callback: (user: FirebaseAuthUser | null) => void) => {
+  return onAuthStateChanged(authInternal, callback);
 };
+
 
 // --- User Profile Service ---
 export const saveUserProfile = async (userId: string, profileData: Omit<UserProfile, 'id' | 'createdAt'>): Promise<void> => {
-  const userRef = ref(database, `users/${userId}`);
+  const userRef = ref(databaseInternal, `users/${userId}`);
   const fullProfileData: UserProfile = {
     id: userId,
     ...profileData,
@@ -82,7 +88,7 @@ export const saveUserProfile = async (userId: string, profileData: Omit<UserProf
 };
 
 export const getUserProfile = async (userId: string): Promise<UserProfile | null> => {
-  const userRef = ref(database, `users/${userId}`);
+  const userRef = ref(databaseInternal, `users/${userId}`);
   const snapshot = await get(userRef);
   if (snapshot.exists()) {
     return snapshot.val() as UserProfile;
@@ -91,16 +97,13 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 };
 
 export const updateUserProfile = async (userId: string, updates: Partial<UserProfile>): Promise<void> => {
-  const userRef = ref(database, `users/${userId}`);
+  const userRef = ref(databaseInternal, `users/${userId}`);
   await update(userRef, updates);
 };
 
 
 // --- Trip Service ---
-
-// Path for active/current trips
 const CURRENT_TRIPS_PATH = 'currentTrips';
-// Path for finished trips (example: finishedTrips/driverId/tripId)
 const FINISHED_TRIPS_PATH = 'finishedTrips';
 
 export const addTrip = async (driverId: string, tripData: NewTripData): Promise<Trip> => {
@@ -114,40 +117,43 @@ export const addTrip = async (driverId: string, tripData: NewTripData): Promise<
     passengers: [],
     createdAt: serverTimestamp(),
   };
-  const tripRef = ref(database, `${CURRENT_TRIPS_PATH}/${tripId}`);
+  const tripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
   await set(tripRef, newTrip);
   return newTrip;
 };
 
 export const updateTrip = async (tripId: string, updates: Partial<Trip>): Promise<void> => {
-  const tripRef = ref(database, `${CURRENT_TRIPS_PATH}/${tripId}`);
+  const tripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
   const updateData = { ...updates, updatedAt: serverTimestamp() };
   await update(tripRef, updateData);
 };
 
 export const deleteTrip = async (tripId: string): Promise<void> => {
-  // Usually, "deleting" a trip might mean cancelling it.
-  // For now, this will update its status to 'cancelled'.
-  // True deletion from currentTrips happens when it's moved to finishedTrips.
-  await updateTrip(tripId, { status: 'cancelled' });
+  await updateTrip(tripId, { status: 'cancelled', updatedAt: serverTimestamp() });
 };
 
 export const getTripById = async (tripId: string): Promise<Trip | null> => {
-    const tripRef = ref(database, `${CURRENT_TRIPS_PATH}/${tripId}`);
+    const tripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
     const snapshot = await get(tripRef);
     if (snapshot.exists()) {
         return snapshot.val() as Trip;
     }
-    // Optionally, check finishedTrips if not found in currentTrips
-    // This part depends on how driverId is structured in finishedTrips
+    // Consider checking finishedTrips if necessary for your app logic
+    // const finishedTripRef = ref(database, `${FINISHED_TRIPS_PATH}/${driverId}/${tripId}`); // driverId would be needed
+    // const finishedSnapshot = await get(finishedTripRef);
+    // if (finishedSnapshot.exists()) {
+    //     return finishedSnapshot.val() as Trip;
+    // }
     return null;
 };
 
 
 export const getActiveTripForDriver = async (driverId: string): Promise<Trip | null> => {
+  // This is a workaround. Ideally, you should use Firebase queries with indexes.
+  // Ensure your Firebase rules for `currentTrips` have ".indexOn": "driverId" or ["driverId", "status"]
   console.warn("[WORKAROUND] Fetching all current trips and filtering client-side due to missing Firebase index. Add '.indexOn': 'driverId' to 'currentTrips' rules for better performance.");
   
-  const tripsRef = ref(database, CURRENT_TRIPS_PATH);
+  const tripsRef = ref(databaseInternal, CURRENT_TRIPS_PATH);
   const snapshot = await get(tripsRef); 
 
   if (snapshot.exists()) {
@@ -156,8 +162,8 @@ export const getActiveTripForDriver = async (driverId: string): Promise<Trip | n
       const trip = childSnapshot.val() as Trip;
       if (trip.driverId === driverId && (trip.status === 'upcoming' || trip.status === 'ongoing')) {
         activeTrip = trip;
-        // @ts-ignore allow forEach break
-        return true; 
+        // @ts-ignore 
+        return true; // Attempt to break forEach (not standard, but works in some JS environments)
       }
     });
     return activeTrip;
@@ -166,9 +172,11 @@ export const getActiveTripForDriver = async (driverId: string): Promise<Trip | n
 };
 
 export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Promise<Trip[]> => {
-   console.warn("[WORKAROUND] Fetching all current trips and filtering client-side due to missing Firebase index. Add '.indexOn': ['driverId', 'status'] to 'currentTrips' rules for better performance.");
+  // This is a workaround. Ideally, you should use Firebase queries with indexes.
+  // Ensure your Firebase rules for `currentTrips` have ".indexOn": ["driverId", "status"]
+  console.warn("[WORKAROUND] Fetching all current trips and filtering client-side due to missing Firebase index. Add '.indexOn': ['driverId', 'status'] to 'currentTrips' rules for better performance.");
 
-  const tripsRef = ref(database, CURRENT_TRIPS_PATH);
+  const tripsRef = ref(databaseInternal, CURRENT_TRIPS_PATH);
   const snapshot = await get(tripsRef); 
   const trips: Trip[] = [];
 
@@ -180,11 +188,13 @@ export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Pro
       }
     });
   }
+  // Sort trips by date, upcoming first
   return trips.sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
 };
 
 export const getCompletedTripsForDriver = async (driverId: string): Promise<Trip[]> => {
-  const tripsRef = ref(database, `${FINISHED_TRIPS_PATH}/${driverId}`);
+  const tripsRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${driverId}`);
+  // Consider adding ".indexOn": "dateTime" or similar to finishedTrips/{driverId} for server-side sorting if needed
   const snapshot = await get(tripsRef);
   const trips: Trip[] = [];
   if (snapshot.exists()) {
@@ -192,30 +202,45 @@ export const getCompletedTripsForDriver = async (driverId: string): Promise<Trip
       trips.push(childSnapshot.val() as Trip);
     });
   }
+  // Sort by date, most recent first
   return trips.sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());
 };
 
 export const endTrip = async (trip: Trip): Promise<void> => {
   if (!trip || !trip.driverId || !trip.id) {
+    console.error("Invalid trip data for ending trip:", trip);
     throw new Error("Invalid trip data for ending trip.");
   }
   const earnings = (trip.selectedSeats?.length || 0) * trip.pricePerPassenger;
-  const updatedTripData: Partial<Trip> = {
+  
+  const finishedTripData: Trip = {
+    ...trip,
     status: 'completed',
     earnings: earnings,
     updatedAt: serverTimestamp(),
   };
   
-  const finishedTripRef = ref(database, `${FINISHED_TRIPS_PATH}/${trip.driverId}/${trip.id}`);
-  const originalTripRef = ref(database, `${CURRENT_TRIPS_PATH}/${trip.id}`);
-  const finalTripDataForFinished = { ...trip, ...updatedTripData };
+  const finishedTripRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${trip.driverId}/${trip.id}`);
+  const originalTripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${trip.id}`);
 
-  await set(finishedTripRef, finalTripDataForFinished);
+  // Using a multi-location update (atomic operation) is safer if possible,
+  // but for simplicity, we'll do separate operations.
+  // In a real app, consider cloud functions for such "move" operations to ensure atomicity.
+  await set(finishedTripRef, finishedTripData);
   await remove(originalTripRef);
+
+  // Update driver's trip count (example - this should ideally be a transaction or cloud function)
+  const userProfileRef = ref(databaseInternal, `users/${trip.driverId}`);
+  const userProfileSnap = await get(userProfileRef);
+  if (userProfileSnap.exists()) {
+      const currentTripsCount = userProfileSnap.val().tripsCount || 0;
+      await update(userProfileRef, { tripsCount: currentTripsCount + 1 });
+  }
 };
 
+
 export const getTrips = async (): Promise<Trip[]> => {
-  const tripsRef = ref(database, CURRENT_TRIPS_PATH);
+  const tripsRef = ref(databaseInternal, CURRENT_TRIPS_PATH);
   const snapshot = await get(tripsRef);
   const trips: Trip[] = [];
   if (snapshot.exists()) {
@@ -226,32 +251,5 @@ export const getTrips = async (): Promise<Trip[]> => {
   return trips;
 };
 
-/**
- * [AR] محاكاة لعملية رفع صورة إلى ImageKit. هذه الدالة **لا تقوم برفع فعلي للملفات**.
- * بدلاً من ذلك، هي تنشئ رابط URL وهمي بناءً على اسم الملف المدخل،
- * ليتم حفظه في Firebase Realtime Database كأنه رابط صورة حقيقي من ImageKit.
- * في تطبيق حقيقي، ستحتاج إلى استخدام ImageKit SDK وربما خادم وسيط لرفع الملفات بأمان.
- * يتم استخدام معرّف ImageKit الخاص بالمستخدم (Tawsellah) هنا.
- * @param fileName اسم الملف المراد "رفعه" (مثل "my-image.jpg").
- * @returns رابط URL مُحاكى لـ ImageKit.
- */
-export const simulateImageKitUpload = (fileName: string = "sample.jpg"): string => {
-  const imageKitId = "Tawsellah"; // User's ImageKit ID from their URL Endpoint
-  const uploadFolder = "uploads"; // You can change this if you use a different folder structure in ImageKit
-
-  // Extract filename without extension for public_id
-  const nameParts = fileName.split('.');
-  const extension = nameParts.pop() || 'jpg'; // Default to jpg if no extension
-  const baseName = nameParts.join('.').replace(/[^a-zA-Z0-9_.-]/g, '_'); // Sanitize basename
-
-  // Create a unique-ish filename by appending a short random string and timestamp component.
-  const uniqueFileName = `${baseName}_${Math.random().toString(36).substring(2, 7)}_${Date.now()}`;
-  
-  // Construct the URL based on the ImageKit endpoint structure
-  const generatedUrl = `https://ik.imagekit.io/${imageKitId}/${uploadFolder}/${uniqueFileName}.${extension}`;
-  console.log(`[SIMULATE IMAGEKIT UPLOAD] Generated URL for ${fileName} using ImageKit ID '${imageKitId}': ${generatedUrl}`);
-  return generatedUrl;
-};
-
-// For backward compatibility if any component still uses it, though it should be updated
-export const simulateCloudinaryUpload = simulateImageKitUpload;
+// This function is removed as we are now implementing actual uploads.
+// export const simulateImageKitUpload = (fileName: string = "sample.jpg"): string => { ... }

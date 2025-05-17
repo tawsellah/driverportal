@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { UserPlus, ArrowLeft, User, Phone, Lock, CreditCard, Car, Image as ImageIcon, CalendarDays, Palette, Hash, Loader2 } from 'lucide-react'; // Removed Mail icon
+import { UserPlus, ArrowLeft, User, Phone, Lock, CreditCard, Car, Image as ImageIcon, CalendarDays, Palette, Hash, Loader2 } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { IconInput as OriginalIconInputComponent } from '@/components/shared/icon-input';
@@ -20,56 +20,77 @@ import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { auth } from '@/lib/firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { saveUserProfile, simulateImageKitUpload, type UserProfile } from '@/lib/firebaseService'; // Updated import
+import { saveUserProfile, type UserProfile } from '@/lib/firebaseService'; 
 import { setAuthStatus } from '@/lib/storage';
 
-
 const signUpSchema = z.object({
-  // Basic Info
   fullName: z.string().min(3, { message: "الاسم الكامل مطلوب." }),
   phone: z.string().regex(/^07[789]\d{7}$/, { message: "رقم هاتف أردني غير صالح (مثال: 0791234567)." }),
   password: z.string().min(6, { message: "كلمة المرور يجب أن تكون 6 أحرف على الأقل." }),
-  // Driver Info
   idNumber: z.string().min(10, { message: "رقم الهوية مطلوب." }).max(10, { message: "رقم الهوية يجب أن يكون 10 أرقام." }),
-  idPhoto: z.any().optional(), 
+  idPhoto: z.instanceof(FileList).optional().nullable(), 
   licenseNumber: z.string().min(1, { message: "رقم الرخصة مطلوب." }),
   licenseExpiry: z.string().min(1, { message: "تاريخ انتهاء الرخصة مطلوب." }),
-  licensePhoto: z.any().optional(), 
-  // Vehicle Info
+  licensePhoto: z.instanceof(FileList).optional().nullable(), 
   vehicleType: z.string().min(1, { message: "نوع المركبة مطلوب." }),
   makeModel: z.string().min(1, { message: "الصنع والموديل مطلوب." }),
   year: z.string().min(4, { message: "سنة الصنع مطلوبة (مثال: 2020)." }).max(4),
   color: z.string().min(1, { message: "لون المركبة مطلوب." }),
   plateNumber: z.string().min(1, { message: "رقم اللوحة مطلوب." }),
-  vehiclePhoto: z.any().optional(), 
+  vehiclePhoto: z.instanceof(FileList).optional().nullable(), 
 });
 
 type SignUpFormValues = z.infer<typeof signUpSchema>;
 
+// Helper function to upload a single file to ImageKit
+async function uploadFileToImageKitHelper(file: File | undefined | null): Promise<string | null> {
+  if (!file) return null;
+  try {
+    const authResponse = await fetch('/api/imagekit-auth');
+    if (!authResponse.ok) throw new Error('Failed to get ImageKit auth params');
+    const authParams = await authResponse.json();
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('fileName', file.name);
+    formData.append('publicKey', process.env.NEXT_PUBLIC_IMAGEKIT_PUBLIC_KEY || "public_IfRvA+ieL0CZzBuuO9i9cFceLn8=");
+    formData.append('signature', authParams.signature);
+    formData.append('expire', authParams.expire);
+    formData.append('token', authParams.token);
+    // formData.append('folder', '/user_uploads/'); // Optional
+
+    const uploadResponse = await fetch('https://upload.imagekit.io/api/v1/files/upload', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!uploadResponse.ok) {
+      const errorData = await uploadResponse.json();
+      console.error('ImageKit Upload Error:', errorData);
+      throw new Error(errorData.message || 'ImageKit upload failed for a file');
+    }
+    const uploadResult = await uploadResponse.json();
+    return uploadResult.url;
+  } catch (error) {
+    console.error('Error uploading a file to ImageKit:', error);
+    return null;
+  }
+}
+
 const FileInput = ({ 
-  label, id, error, register, fieldName
+  label, id, error, register, fieldName 
 }: { 
   label: string, id: string, error?: string, 
-  register: any,
-  fieldName: keyof SignUpFormValues
-}) => {
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      // The actual URL generation (simulation) happens in onSubmit
-      console.log(`File selected for ${fieldName}: ${file.name}`);
-    }
-  };
-  return (
-    <div>
-      <Label htmlFor={id}>{label} <span className="text-muted-foreground">(اختياري)</span></Label>
-      <Input id={id} type="file" accept="image/*" className={error ? 'border-destructive' : ''} {...register(fieldName)} onChange={handleFileChange} />
-      {error && <p className="mt-1 text-sm text-destructive">{error}</p>}
-      <p className="mt-1 text-xs text-muted-foreground">ملاحظة: تحميل الملفات هو للعرض والمحاكاة فقط.</p>
-    </div>
-  );
-};
-
+  register: any, // Use "any" for register type in this context
+  fieldName: keyof SignUpFormValues 
+}) => (
+  <div>
+    <Label htmlFor={id}>{label} <span className="text-muted-foreground">(اختياري)</span></Label>
+    <Input id={id} type="file" accept="image/*" className={error ? 'border-destructive' : ''} {...register(fieldName)} />
+    {error && <p className="mt-1 text-sm text-destructive">{error}</p>}
+    <p className="mt-1 text-xs text-muted-foreground">سيتم رفع الصورة إلى ImageKit عند إنشاء الحساب.</p>
+  </div>
+);
 
 const PatchedIconInput = ({ error, className, ...props }: React.ComponentProps<typeof OriginalIconInputComponent> & { error?: string }) => (
   <OriginalIconInputComponent className={cn(className, error ? 'border-destructive focus:border-destructive focus-visible:ring-destructive' : '')} {...props} />
@@ -96,30 +117,38 @@ export default function SignUpPage() {
     const constructedEmail = `t${data.phone}@tawsellah.com`;
 
     try {
+      // 1. Create user in Firebase Auth
       const userCredential = await createUserWithEmailAndPassword(auth, constructedEmail, data.password);
       const user = userCredential.user;
 
       if (user) {
+        // 2. Upload images to ImageKit and get URLs
+        const idPhotoUrl = data.idPhoto && data.idPhoto.length > 0 ? await uploadFileToImageKitHelper(data.idPhoto[0]) : null;
+        const licensePhotoUrl = data.licensePhoto && data.licensePhoto.length > 0 ? await uploadFileToImageKitHelper(data.licensePhoto[0]) : null;
+        const vehiclePhotoUrl = data.vehiclePhoto && data.vehiclePhoto.length > 0 ? await uploadFileToImageKitHelper(data.vehiclePhoto[0]) : null;
+        
+        // 3. Prepare profile data for Firebase RTDB
         const profileData: Omit<UserProfile, 'id' | 'createdAt'> = {
           fullName: data.fullName,
           email: constructedEmail,
           phone: data.phone,
           idNumber: data.idNumber,
-          idPhotoUrl: data.idPhoto && data.idPhoto.length > 0 ? simulateImageKitUpload(data.idPhoto[0].name) : null,
+          idPhotoUrl: idPhotoUrl,
           licenseNumber: data.licenseNumber,
           licenseExpiry: data.licenseExpiry,
-          licensePhotoUrl: data.licensePhoto && data.licensePhoto.length > 0 ? simulateImageKitUpload(data.licensePhoto[0].name) : null,
+          licensePhotoUrl: licensePhotoUrl,
           vehicleType: data.vehicleType,
           vehicleMakeModel: data.makeModel,
           vehicleYear: data.year,
           vehicleColor: data.color,
           vehiclePlateNumber: data.plateNumber,
-          vehiclePhotosUrl: data.vehiclePhoto && data.vehiclePhoto.length > 0 ? simulateImageKitUpload(data.vehiclePhoto[0].name) : null,
+          vehiclePhotosUrl: vehiclePhotoUrl, // Assuming vehiclePhotosUrl maps to vehiclePhoto for now
           rating: 0, 
           tripsCount: 0, 
           paymentMethods: { cash: true, click: false }, 
         };
 
+        // 4. Save profile to Firebase RTDB
         await saveUserProfile(user.uid, profileData);
         setAuthStatus(true); 
 
@@ -130,10 +159,10 @@ export default function SignUpPage() {
         router.push('/trips');
       }
     } catch (error: any) {
-      console.error("Firebase Signup Error:", error);
+      console.error("Firebase Signup Error or ImageKit Upload Error:", error);
       toast({
         title: "خطأ في إنشاء الحساب",
-        description: error.message || "يرجى المحاولة مرة أخرى.",
+        description: error.message || "يرجى المحاولة مرة أخرى أو التأكد من رفع الصور بشكل صحيح.",
         variant: "destructive",
       });
     } finally {
@@ -158,7 +187,6 @@ export default function SignUpPage() {
         )}
         {isMounted && (
           <Accordion type="multiple" defaultValue={['basic-info', 'driver-info', 'vehicle-info']} className="w-full">
-            {/* Basic Information */}
             <AccordionItem value="basic-info">
               <AccordionTrigger>
                 <h3 className="text-lg font-semibold">البيانات الأساسية</h3>
@@ -182,7 +210,6 @@ export default function SignUpPage() {
               </AccordionContent>
             </AccordionItem>
 
-            {/* Driver Information */}
             <AccordionItem value="driver-info">
               <AccordionTrigger>
                 <h3 className="text-lg font-semibold">معلومات السائق</h3>
@@ -208,7 +235,6 @@ export default function SignUpPage() {
               </AccordionContent>
             </AccordionItem>
 
-            {/* Vehicle Information */}
             <AccordionItem value="vehicle-info">
               <AccordionTrigger>
                 <h3 className="text-lg font-semibold">بيانات المركبة</h3>
@@ -281,4 +307,3 @@ export default function SignUpPage() {
     </div>
   );
 }
-    

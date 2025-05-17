@@ -12,13 +12,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/componen
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { User, Mail, Phone, Star, Briefcase, Car, Edit3, Save, Loader2, Check, X, LogOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-// import Image from 'next/image'; // Not used directly, AvatarImage handles next/image capabilities
 import { VEHICLE_TYPES, JORDAN_GOVERNORATES } from '@/lib/constants';
 import { format } from 'date-fns';
 import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
-import { getUserProfile, updateUserProfile, type UserProfile, simulateImageKitUpload } from '@/lib/firebaseService'; 
+import { getUserProfile, updateUserProfile, type UserProfile } from '@/lib/firebaseService'; 
 import { setAuthStatus } from '@/lib/storage';
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -30,10 +29,50 @@ const profileSchema = z.object({
     click: z.boolean().optional().default(false),
     clickCode: z.string().optional().nullable(),
   }).optional(),
-  idPhotoUrl: z.string().url().or(z.literal("")).optional().nullable(), 
+  // idPhotoUrl is not directly in the form, but handled via file upload
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
+
+async function uploadFileToImageKit(file: File): Promise<string | null> {
+  try {
+    // 1. Get authentication parameters from your API route
+    const authResponse = await fetch('/api/imagekit-auth');
+    if (!authResponse.ok) {
+      throw new Error('Failed to get ImageKit auth params');
+    }
+    const authParams = await authResponse.json();
+
+    // 2. Prepare FormData for ImageKit upload
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('fileName', file.name);
+    formData.append('publicKey', process.env.NEXT_PUBLIC_IMAGEKIT_PUBLIC_KEY || "public_IfRvA+ieL0CZzBuuO9i9cFceLn8="); // Use your public key
+    formData.append('signature', authParams.signature);
+    formData.append('expire', authParams.expire);
+    formData.append('token', authParams.token);
+    // formData.append('folder', '/user_profiles/'); // Optional: specify a folder
+
+    // 3. Upload to ImageKit
+    const uploadResponse = await fetch('https://upload.imagekit.io/api/v1/files/upload', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!uploadResponse.ok) {
+      const errorData = await uploadResponse.json();
+      console.error('ImageKit Upload Error:', errorData);
+      throw new Error(errorData.message || 'ImageKit upload failed');
+    }
+
+    const uploadResult = await uploadResponse.json();
+    return uploadResult.url; // URL of the uploaded image
+  } catch (error) {
+    console.error('Error uploading to ImageKit:', error);
+    return null;
+  }
+}
+
 
 export default function ProfilePage() {
   const { toast } = useToast();
@@ -55,7 +94,6 @@ export default function ProfilePage() {
             click: false,
             clickCode: '',
         },
-        idPhotoUrl: null,
     }
   });
 
@@ -71,7 +109,6 @@ export default function ProfilePage() {
             fullName: profile.fullName,
             phone: profile.phone,
             paymentMethods: profile.paymentMethods || { cash: true, click: false, clickCode: '' },
-            idPhotoUrl: profile.idPhotoUrl || null,
           });
         }
       } else {
@@ -95,10 +132,16 @@ export default function ProfilePage() {
     if (!userProfile || !auth.currentUser) return;
     setIsLoading(true);
     
-    let updatedPhotoUrl: string | null = userProfile.idPhotoUrl || null;
+    let actualUploadedPhotoUrl: string | null = userProfile.idPhotoUrl || null;
     if (newPhotoFile) {
-      updatedPhotoUrl = simulateImageKitUpload(newPhotoFile.name); 
-      console.log("[SIMULATE UPLOAD] Generated ImageKit URL for profile photo:", updatedPhotoUrl);
+      const uploadedUrl = await uploadFileToImageKit(newPhotoFile);
+      if (uploadedUrl) {
+        actualUploadedPhotoUrl = uploadedUrl;
+        console.log("Successfully uploaded to ImageKit, URL:", actualUploadedPhotoUrl);
+      } else {
+        toast({ title: "فشل رفع الصورة", description: "حدث خطأ أثناء رفع الصورة الشخصية. تم حفظ البيانات الأخرى.", variant: "destructive" });
+        // Continue with other profile updates even if image upload fails
+      }
     }
 
     const updates: Partial<UserProfile> = {
@@ -109,23 +152,23 @@ export default function ProfilePage() {
         click: data.paymentMethods?.click || false,
         clickCode: data.paymentMethods?.click ? (data.paymentMethods?.clickCode || '') : '',
       },
-      idPhotoUrl: updatedPhotoUrl,
+      idPhotoUrl: actualUploadedPhotoUrl, // Save the actual URL or old URL if upload failed
     };
 
     try {
       await updateUserProfile(auth.currentUser.uid, updates);
       const refreshedProfile = await getUserProfile(auth.currentUser.uid);
       console.log("[DEBUG] Refreshed profile idPhotoUrl after save:", refreshedProfile?.idPhotoUrl); 
-      setUserProfile(refreshedProfile); // Ensure userProfile state is updated
+      setUserProfile(refreshedProfile); 
        if (refreshedProfile) {
           reset({ 
             fullName: refreshedProfile.fullName,
             phone: refreshedProfile.phone,
             paymentMethods: refreshedProfile.paymentMethods || { cash: true, click: false, clickCode: '' },
-            idPhotoUrl: refreshedProfile.idPhotoUrl || null, 
+            // idPhotoUrl is not part of form values, it's part of userProfile state
           });
         }
-      setNewPhotoFile(null); // Clear the preview file
+      setNewPhotoFile(null); 
       setIsEditing(false);
       toast({ title: "تم تحديث الملف الشخصي بنجاح!" });
     } catch (error) {
@@ -162,11 +205,11 @@ export default function ProfilePage() {
   
   const vehicleTypeName = VEHICLE_TYPES.find(vt => vt.id === userProfile.vehicleType)?.name || userProfile.vehicleType || 'غير محدد';
   
-  let avatarSrc = "https://placehold.co/100x100.png?text=S"; // Default placeholder
+  let avatarSrc = "https://placehold.co/100x100.png?text=S"; 
   if (newPhotoFile) {
-    avatarSrc = URL.createObjectURL(newPhotoFile); // Preview new file
+    avatarSrc = URL.createObjectURL(newPhotoFile); 
   } else if (userProfile && userProfile.idPhotoUrl) { 
-    avatarSrc = userProfile.idPhotoUrl; // Use saved URL from state
+    avatarSrc = userProfile.idPhotoUrl; 
   }
 
 
@@ -175,7 +218,6 @@ export default function ProfilePage() {
       <Card>
         <CardHeader className="flex flex-col items-center text-center">
           <Avatar className="w-24 h-24 mb-4 border-2 border-primary">
-            {/* Ensure key changes when avatarSrc changes to force re-render */}
             <AvatarImage 
               key={avatarSrc} 
               src={avatarSrc} 
@@ -185,10 +227,10 @@ export default function ProfilePage() {
           </Avatar>
           {isEditing && (
             <div className="mb-2 w-full max-w-xs">
-              <Label htmlFor="newIdPhoto">تغيير الصورة الشخصية (محاكاة)</Label>
+              <Label htmlFor="newIdPhoto">تغيير الصورة الشخصية</Label>
               <Input id="newIdPhoto" type="file" accept="image/*" onChange={handlePhotoChange} />
               <p className="mt-1 text-xs text-muted-foreground">
-                ملاحظة: يتم محاكاة رفع الصورة. سيتم إنشاء رابط وحفظه.
+                سيتم رفع الصورة إلى ImageKit.
               </p>
             </div>
           )}
@@ -201,7 +243,6 @@ export default function ProfilePage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            {/* Personal Info */}
             <h3 className="text-lg font-semibold border-b pb-2 mb-3">المعلومات الشخصية</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -224,7 +265,6 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* Driver Info */}
              <h3 className="text-lg font-semibold border-b pb-2 mt-6 mb-3">معلومات الرخصة</h3>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -237,8 +277,6 @@ export default function ProfilePage() {
                 </div>
             </div>
 
-
-            {/* Vehicle Info */}
             <h3 className="text-lg font-semibold border-b pb-2 mt-6 mb-3">معلومات المركبة</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -263,7 +301,6 @@ export default function ProfilePage() {
               </div>
             </div>
             
-            {/* Payment Methods */}
             <h3 className="text-lg font-semibold border-b pb-2 mt-6 mb-3">طرق الدفع المقبولة</h3>
             <div className="space-y-3">
               <div className="flex items-center space-x-2 space-x-reverse">
@@ -327,13 +364,12 @@ export default function ProfilePage() {
           {isEditing && (
              <Button onClick={() => { 
                 setIsEditing(false); 
-                setNewPhotoFile(null); // Clear preview if cancelling edit
+                setNewPhotoFile(null); 
                 if(userProfile) { 
                     reset({ 
                         fullName: userProfile.fullName, 
                         phone: userProfile.phone, 
                         paymentMethods: userProfile.paymentMethods || { cash: true, click: false, clickCode: '' }, 
-                        idPhotoUrl: userProfile.idPhotoUrl || null 
                     });
                 }
              }} variant="outline" className="w-full">
@@ -348,6 +384,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-    
-
-    
