@@ -31,7 +31,7 @@ const tripSchema = z.object({
   tripDate: z.date({ required_error: "تاريخ الرحلة مطلوب" }),
   tripTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "صيغة الوقت غير صحيحة (HH:MM)" }),
   expectedArrivalTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "صيغة الوقت غير صحيحة (HH:MM)" }),
-  offeredSeatIds: z.array(z.string() as z.ZodType<SeatID>).min(1, { message: "يجب اختيار مقعد واحد على الأقل" }),
+  offeredSeatIds: z.array(z.string() as z.ZodType<SeatID>).min(1, { message: "يجب اختيار مقعد واحد على الأقل لتقديمه" }), // This will be used by the form
   meetingPoint: z.string().min(3, { message: "مكان اللقاء مطلوب (3 أحرف على الأقل)" }),
   pricePerPassenger: z.coerce.number().min(0, { message: "السعر يجب أن يكون رقمًا موجبًا" }),
   notes: z.string().optional(),
@@ -59,7 +59,6 @@ export default function CreateTripPage() {
           setHasActiveTrip(true);
         }
       } else {
-        // Should not happen if page is protected
         router.push('/auth/signin');
       }
       setIsCheckingActiveTrip(false);
@@ -72,13 +71,13 @@ export default function CreateTripPage() {
     resolver: zodResolver(tripSchema),
     defaultValues: {
       stops: [],
-      offeredSeatIds: [],
+      offeredSeatIds: [], // Form uses this array
       pricePerPassenger: 0,
     },
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: "stops" });
-  const offeredSeatIds = watch("offeredSeatIds");
+  const offeredSeatIdsFromForm = watch("offeredSeatIds");
 
   const onSubmit = async (data: TripFormValues) => {
     const currentUser = auth.currentUser;
@@ -96,13 +95,19 @@ export default function CreateTripPage() {
     const [hours, minutes] = data.tripTime.split(':');
     dateTime.setHours(parseInt(hours), parseInt(minutes));
 
+    // Convert offeredSeatIds (array from form) to offeredSeatsConfig (map for Firebase)
+    const offeredSeatsConfig: Record<string, boolean> = {};
+    passengerSeats.forEach(seat => {
+      offeredSeatsConfig[seat.id] = data.offeredSeatIds.includes(seat.id as SeatID);
+    });
+
     const newTripData: NewTripData = {
       startPoint: data.startPoint,
       destination: data.destination,
       stops: data.stops,
       dateTime: dateTime.toISOString(),
       expectedArrivalTime: data.expectedArrivalTime,
-      offeredSeatIds: data.offeredSeatIds,
+      offeredSeatsConfig: offeredSeatsConfig, // Use the map here
       meetingPoint: data.meetingPoint,
       pricePerPassenger: data.pricePerPassenger,
       notes: data.notes,
@@ -121,7 +126,7 @@ export default function CreateTripPage() {
   };
 
   const toggleSeat = (seatId: SeatID) => {
-    const currentSeats = offeredSeatIds || [];
+    const currentSeats = offeredSeatIdsFromForm || [];
     const newSeats = currentSeats.includes(seatId)
       ? currentSeats.filter(id => id !== seatId)
       : [...currentSeats, seatId];
@@ -286,10 +291,10 @@ export default function CreateTripPage() {
                 <Button
                   key={seat.id}
                   type="button"
-                  variant={offeredSeatIds.includes(seat.id as SeatID) ? "default" : "outline"}
+                  variant={offeredSeatIdsFromForm.includes(seat.id as SeatID) ? "default" : "outline"}
                   onClick={() => toggleSeat(seat.id as SeatID)}
                   className="flex flex-col items-center h-auto p-2 text-center"
-                  aria-pressed={offeredSeatIds.includes(seat.id as SeatID)}
+                  aria-pressed={offeredSeatIdsFromForm.includes(seat.id as SeatID)}
                 >
                   <Armchair className="h-6 w-6 mb-1"/>
                   <span className="text-xs">{seat.name}</span>
@@ -298,7 +303,7 @@ export default function CreateTripPage() {
             </div>
             {errors.offeredSeatIds && <p className="mt-1 text-sm text-destructive">{errors.offeredSeatIds.message}</p>}
             <p className="mt-1 text-sm text-muted-foreground">
-              عدد المقاعد المتاحة: {offeredSeatIds?.length || 0}
+              عدد المقاعد المتاحة: {offeredSeatIdsFromForm?.length || 0}
             </p>
           </div>
 

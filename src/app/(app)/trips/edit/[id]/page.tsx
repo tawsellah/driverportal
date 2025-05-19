@@ -32,7 +32,7 @@ const tripSchema = z.object({
   tripDate: z.date({ required_error: "تاريخ الرحلة مطلوب" }),
   tripTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "صيغة الوقت غير صحيحة (HH:MM)" }),
   expectedArrivalTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "صيغة الوقت غير صحيحة (HH:MM)" }),
-  offeredSeatIds: z.array(z.string() as z.ZodType<SeatID>).min(1, { message: "يجب اختيار مقعد واحد على الأقل" }),
+  offeredSeatIds: z.array(z.string() as z.ZodType<SeatID>).min(1, { message: "يجب اختيار مقعد واحد على الأقل" }), // Form uses this array
   meetingPoint: z.string().min(3, { message: "مكان اللقاء مطلوب (3 أحرف على الأقل)" }),
   pricePerPassenger: z.coerce.number().min(0, { message: "السعر يجب أن يكون رقمًا موجبًا" }),
   notes: z.string().optional(),
@@ -58,12 +58,12 @@ export default function EditTripPage() {
     resolver: zodResolver(tripSchema),
     defaultValues: {
       stops: [],
-      offeredSeatIds: [],
+      offeredSeatIds: [], // Form uses this array
     },
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: "stops" });
-  const offeredSeatIds = watch("offeredSeatIds");
+  const offeredSeatIdsFromForm = watch("offeredSeatIds");
 
   useEffect(() => {
     setMinCalendarDate(new Date(new Date().setHours(0,0,0,0)));
@@ -81,6 +81,17 @@ export default function EditTripPage() {
         if (foundTrip && foundTrip.driverId === currentUser.uid && (foundTrip.status === 'upcoming' || foundTrip.status === 'ongoing')) {
           setTripToEdit(foundTrip);
           const tripDate = parseISO(foundTrip.dateTime);
+          
+          // Convert offeredSeatsConfig (map from Firebase) to offeredSeatIds (array for form)
+          const initialOfferedSeatIds: SeatID[] = [];
+          if (foundTrip.offeredSeatsConfig) {
+            for (const seat in foundTrip.offeredSeatsConfig) {
+              if (foundTrip.offeredSeatsConfig[seat]) {
+                initialOfferedSeatIds.push(seat as SeatID);
+              }
+            }
+          }
+
           reset({
             startPoint: foundTrip.startPoint,
             destination: foundTrip.destination,
@@ -88,7 +99,7 @@ export default function EditTripPage() {
             tripDate: tripDate,
             tripTime: format(tripDate, "HH:mm"),
             expectedArrivalTime: foundTrip.expectedArrivalTime,
-            offeredSeatIds: foundTrip.offeredSeatIds || [],
+            offeredSeatIds: initialOfferedSeatIds, // Use the converted array
             meetingPoint: foundTrip.meetingPoint,
             pricePerPassenger: foundTrip.pricePerPassenger,
             notes: foundTrip.notes || '',
@@ -120,13 +131,19 @@ export default function EditTripPage() {
     const [hours, minutes] = data.tripTime.split(':');
     dateTime.setHours(parseInt(hours), parseInt(minutes));
 
-    const updatedTripData: Partial<Trip> = { // Only send partial updates
+    // Convert offeredSeatIds (array from form) to offeredSeatsConfig (map for Firebase)
+    const offeredSeatsConfig: Record<string, boolean> = {};
+    passengerSeats.forEach(seat => {
+      offeredSeatsConfig[seat.id] = data.offeredSeatIds.includes(seat.id as SeatID);
+    });
+
+    const updatedTripData: Partial<Trip> = { 
       startPoint: data.startPoint,
       destination: data.destination,
       stops: data.stops,
       dateTime: dateTime.toISOString(),
       expectedArrivalTime: data.expectedArrivalTime,
-      offeredSeatIds: data.offeredSeatIds,
+      offeredSeatsConfig: offeredSeatsConfig, // Use the map here
       meetingPoint: data.meetingPoint,
       pricePerPassenger: data.pricePerPassenger,
       notes: data.notes,
@@ -145,8 +162,7 @@ export default function EditTripPage() {
   };
 
   const toggleSeat = (seatId: SeatID) => {
-    const currentSeats = offeredSeatIds || [];
-    // Prevent modifying selected seats if they are already booked (selectedSeats)
+    const currentSeats = offeredSeatIdsFromForm || [];
     if (tripToEdit?.selectedSeats?.includes(seatId)) {
         toast({ title: "لا يمكن تعديل مقعد محجوز", description: "هذا المقعد تم حجزه بالفعل من قبل راكب.", variant: "destructive" });
         return;
@@ -308,10 +324,10 @@ export default function EditTripPage() {
                 <Button
                   key={seat.id}
                   type="button"
-                  variant={(offeredSeatIds || []).includes(seat.id as SeatID) ? "default" : "outline"}
+                  variant={(offeredSeatIdsFromForm || []).includes(seat.id as SeatID) ? "default" : "outline"}
                   onClick={() => toggleSeat(seat.id as SeatID)}
                   className={cn("flex flex-col items-center h-auto p-2 text-center", tripToEdit?.selectedSeats?.includes(seat.id as SeatID) && "opacity-50 cursor-not-allowed")}
-                  aria-pressed={(offeredSeatIds || []).includes(seat.id as SeatID)}
+                  aria-pressed={(offeredSeatIdsFromForm || []).includes(seat.id as SeatID)}
                   disabled={tripToEdit?.selectedSeats?.includes(seat.id as SeatID)}
                 >
                   <Armchair className="h-6 w-6 mb-1"/>
@@ -322,7 +338,7 @@ export default function EditTripPage() {
             </div>
             {errors.offeredSeatIds && <p className="mt-1 text-sm text-destructive">{errors.offeredSeatIds.message}</p>}
              <p className="mt-1 text-sm text-muted-foreground">
-              عدد المقاعد المختارة: {offeredSeatIds?.length || 0}
+              عدد المقاعد المختارة: {offeredSeatIdsFromForm?.length || 0}
             </p>
           </div>
 

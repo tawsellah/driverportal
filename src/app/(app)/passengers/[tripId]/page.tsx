@@ -7,15 +7,15 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft, Users, AlertTriangle, Loader2 } from 'lucide-react';
 import Link from 'next/link';
-import { auth } from '@/lib/firebase';
-import { getTripById, type Trip } from '@/lib/firebaseService'; // Assuming passenger might have a UserProfile like structure
+import { auth, onAuthUserChangedListener, getTripById, type Trip } from '@/lib/firebaseService';
+import { SEAT_CONFIG } from '@/lib/constants';
 
-// Simplified Passenger structure for now
+
 interface SimplePassenger {
   id: string;
   name: string;
   phone?: string;
-  seat: string; // e.g. 'front_passenger'
+  seat: string; 
 }
 
 
@@ -25,42 +25,44 @@ export default function TripPassengersPage() {
   const tripId = params.id as string;
 
   const [trip, setTrip] = useState<Trip | null>(null);
-  const [passengers, setPassengers] = useState<SimplePassenger[]>([]); // This will remain mock for now
+  const [passengers, setPassengers] = useState<SimplePassenger[]>([]); 
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const fetchTripData = async () => {
+    const fetchTripData = async (userId: string) => {
       if (tripId) {
         setIsLoading(true);
-        const currentUser = auth.currentUser;
-        if(!currentUser) {
-            router.push('/auth/signin');
-            return;
-        }
         const currentTrip = await getTripById(tripId);
         
-        if (currentTrip && currentTrip.driverId === currentUser.uid) {
+        if (currentTrip && currentTrip.driverId === userId) {
             setTrip(currentTrip);
             // Mock passenger data for now, this should come from trip.passengers or a backend
-            // For example, if currentTrip.passengers (which is any[] now) had actual passenger UIDs,
-            // you could fetch their profiles. For now, we map selectedSeats.
             const mockPassengers: SimplePassenger[] = currentTrip.selectedSeats.map((seatId, index) => ({
-              id: `passenger-${index + 1}-${seatId}`, // Ensure unique key
+              id: `passenger-${index + 1}-${seatId}`, 
               name: `راكب ${index + 1}`,
-              phone: `079000000${index + 1}`, // Mock phone
-              seat: seatId.replace(/_/g, ' '),
+              phone: `079000000${index + 1}`, 
+              seat: SEAT_CONFIG[seatId]?.name || seatId.replace(/_/g, ' '),
             }));
             setPassengers(mockPassengers);
-        } else if (currentTrip && currentTrip.driverId !== currentUser.uid) {
-            // Driver does not own this trip
-            setTrip(null); // Or show an access denied message
+        } else if (currentTrip && currentTrip.driverId !== userId) {
+            setTrip(null); 
         } else {
-            setTrip(null); // Trip not found
+            setTrip(null); 
         }
         setIsLoading(false);
       }
     };
-    fetchTripData();
+
+    const unsubscribe = onAuthUserChangedListener(user => {
+        if (user) {
+            fetchTripData(user.uid);
+        } else {
+            router.push('/auth/signin');
+            setIsLoading(false);
+        }
+    });
+    return () => unsubscribe();
+
   }, [tripId, router]);
 
   if (isLoading) {
@@ -86,6 +88,9 @@ export default function TripPassengersPage() {
       </Card>
     );
   }
+  
+  const totalOfferedSeats = trip.offeredSeatsConfig ? Object.values(trip.offeredSeatsConfig).filter(isOffered => isOffered).length : 0;
+
 
   return (
     <div>
@@ -103,7 +108,7 @@ export default function TripPassengersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>قائمة الركاب ({passengers.length} / {trip.offeredSeatIds.length - trip.selectedSeats.length + passengers.length} مقاعد مشغولة)</CardTitle>
+          <CardTitle>قائمة الركاب ({passengers.length} / {totalOfferedSeats} مقاعد مشغولة)</CardTitle>
         </CardHeader>
         <CardContent>
           {passengers.length === 0 ? (

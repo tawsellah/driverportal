@@ -8,9 +8,8 @@ import { AlertTriangle, Briefcase, CalendarDays, Clock, DollarSign, Download, Fi
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { JORDAN_GOVERNORATES } from '@/lib/constants';
-import { auth } from '@/lib/firebase';
-import { getCompletedTripsForDriver, type Trip } from '@/lib/firebaseService';
+import { JORDAN_GOVERNORATES, SEAT_CONFIG } from '@/lib/constants';
+import { auth, onAuthUserChangedListener, getCompletedTripsForDriver, type Trip } from '@/lib/firebaseService';
 import { useRouter } from 'next/navigation';
 
 
@@ -19,6 +18,9 @@ function CompletedTripCard({ trip }: { trip: Trip }) {
   const startPointName = JORDAN_GOVERNORATES.find(g => g.id === trip.startPoint)?.name || trip.startPoint;
   const destinationName = JORDAN_GOVERNORATES.find(g => g.id === trip.destination)?.name || trip.destination;
   const stopNames = trip.stops?.map(s => JORDAN_GOVERNORATES.find(g => g.id === s)?.name || s).join('، ');
+
+  const totalOfferedSeats = Object.values(trip.offeredSeatsConfig || {}).filter(isOffered => isOffered).length;
+
 
   const ArrowLeftShort = ({ className }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className={`inline-block ${className}`} viewBox="0 0 16 16">
@@ -48,12 +50,12 @@ function CompletedTripCard({ trip }: { trip: Trip }) {
         </div>
         <div className="flex items-center">
           <Users className="ms-2 h-4 w-4 text-muted-foreground" />
-          عدد الركاب: {trip.selectedSeats.length} / {trip.offeredSeatIds.length}
+          عدد الركاب: {trip.selectedSeats.length} / {totalOfferedSeats}
         </div>
          {trip.selectedSeats && trip.selectedSeats.length > 0 && (
           <div className="flex items-center">
             <Armchair className="ms-2 h-4 w-4 text-muted-foreground" />
-            المقاعد المحجوزة: {trip.selectedSeats.map(s => s.replace(/_/g, ' ')).join('، ')}
+            المقاعد المحجوزة: {trip.selectedSeats.map(s => SEAT_CONFIG[s]?.name || s.replace(/_/g, ' ')).join('، ')}
           </div>
         )}
         <div className="flex items-center">
@@ -89,18 +91,22 @@ export default function HistoryPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const fetchHistory = async () => {
+    const fetchHistory = async (userId: string) => {
       setIsLoading(true);
-      const currentUser = auth.currentUser;
-      if (currentUser) {
-        const trips = await getCompletedTripsForDriver(currentUser.uid);
-        setCompletedTrips(trips);
-      } else {
-        router.push('/auth/signin');
-      }
+      const trips = await getCompletedTripsForDriver(userId);
+      setCompletedTrips(trips);
       setIsLoading(false);
     };
-    fetchHistory();
+
+    const unsubscribe = onAuthUserChangedListener(user => {
+        if (user) {
+            fetchHistory(user.uid);
+        } else {
+            router.push('/auth/signin');
+            setIsLoading(false);
+        }
+    });
+    return () => unsubscribe();
   }, [router]);
 
   const totalEarnings = completedTrips

@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Button, buttonVariants } from '@/components/ui/button'; // Added buttonVariants
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Edit3, Trash2, Users, Route, MapPin, CalendarDays, Clock, Armchair, DollarSign, Loader2, AlertTriangle, Ban, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -20,9 +20,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { JORDAN_GOVERNORATES } from '@/lib/constants';
-import { auth } from '@/lib/firebase';
-import { getUpcomingAndOngoingTripsForDriver, deleteTrip as fbDeleteTrip, endTrip as fbEndTrip, type Trip, getActiveTripForDriver } from '@/lib/firebaseService';
+import { JORDAN_GOVERNORATES, SEAT_CONFIG } from '@/lib/constants';
+import { auth, getUpcomingAndOngoingTripsForDriver, deleteTrip as fbDeleteTrip, endTrip as fbEndTrip, type Trip, getActiveTripForDriver, onAuthUserChangedListener } from '@/lib/firebaseService';
 import { useRouter } from 'next/navigation';
 
 function TripCard({ trip, onDelete, onEndTrip }: { trip: Trip; onDelete: (tripId: string) => void; onEndTrip: (trip: Trip) => void; }) {
@@ -30,19 +29,22 @@ function TripCard({ trip, onDelete, onEndTrip }: { trip: Trip; onDelete: (tripId
 
   const handleDelete = () => {
     onDelete(trip.id);
-    toast({ title: "تم إلغاء الرحلة بنجاح" }); // Changed from "حذف" to "إلغاء"
+    toast({ title: "تم إلغاء الرحلة بنجاح" });
   };
 
   const handleEndTrip = () => {
     onEndTrip(trip);
-    toast({ title: "تم إنهاء الرحلة بنجاح", description: `الأرباح: ${trip.pricePerPassenger * (trip.selectedSeats?.length || 0)} د.أ` });
+    const earnings = (trip.selectedSeats?.length || 0) * trip.pricePerPassenger;
+    toast({ title: "تم إنهاء الرحلة بنجاح", description: `الأرباح: ${earnings.toFixed(2)} د.أ` });
   };
 
   const startPointName = JORDAN_GOVERNORATES.find(g => g.id === trip.startPoint)?.name || trip.startPoint;
   const destinationName = JORDAN_GOVERNORATES.find(g => g.id === trip.destination)?.name || trip.destination;
   const stopNames = trip.stops?.map(s => JORDAN_GOVERNORATES.find(g => g.id === s)?.name || s).join('، ');
 
-  const currentAvailableSeats = (trip.offeredSeatIds?.length || 0) - (trip.selectedSeats?.length || 0);
+  const totalOfferedSeats = Object.values(trip.offeredSeatsConfig || {}).filter(isOffered => isOffered).length;
+  const currentAvailableSeats = totalOfferedSeats - (trip.selectedSeats?.length || 0);
+
 
   const ArrowLeftShort = ({ className }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className={`inline-block ${className}`} viewBox="0 0 16 16">
@@ -77,12 +79,12 @@ function TripCard({ trip, onDelete, onEndTrip }: { trip: Trip; onDelete: (tripId
         </div>
         <div className="flex items-center">
           <Users className="ms-2 h-4 w-4 text-muted-foreground" />
-          المقاعد المتاحة: {currentAvailableSeats} ({trip.offeredSeatIds?.length || 0} معروضة)
+          المقاعد المتاحة: {currentAvailableSeats} ({totalOfferedSeats} معروضة)
         </div>
         {trip.selectedSeats && trip.selectedSeats.length > 0 && (
           <div className="flex items-center">
             <Armchair className="ms-2 h-4 w-4 text-muted-foreground" />
-            المقاعد المحجوزة: {trip.selectedSeats.map(s => s.replace(/_/g, ' ')).join('، ')}
+            المقاعد المحجوزة: {trip.selectedSeats.map(s => SEAT_CONFIG[s]?.name || s.replace(/_/g, ' ')).join('، ')}
           </div>
         )}
         <div className="flex items-center">
@@ -160,6 +162,7 @@ export default function TripsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [canCreateTrip, setCanCreateTrip] = useState(false);
   const router = useRouter();
+  const { toast } = useToast(); // Added toast
 
   const fetchTripsData = async () => {
     setIsLoading(true);
@@ -167,21 +170,23 @@ export default function TripsPage() {
     if (currentUser) {
       const loadedTrips = await getUpcomingAndOngoingTripsForDriver(currentUser.uid);
       setTrips(loadedTrips);
-      // User can create a new trip if there are no 'upcoming' or 'ongoing' trips.
       const activeTrip = await getActiveTripForDriver(currentUser.uid);
       setCanCreateTrip(!activeTrip);
 
     } else {
-      router.push('/auth/signin'); // Should be protected by layout
+      router.push('/auth/signin'); 
     }
     setIsLoading(false);
   };
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(user => {
+    const unsubscribe = onAuthUserChangedListener(user => {
       if (user) {
         fetchTripsData();
       } else {
+        setIsLoading(false); // Stop loading if no user
+        setTrips([]); // Clear trips
+        setCanCreateTrip(false); // Cannot create if not logged in
         router.push('/auth/signin');
       }
     });
@@ -190,8 +195,8 @@ export default function TripsPage() {
 
   const handleDeleteTrip = async (tripId: string) => {
     try {
-      await fbDeleteTrip(tripId); // This now updates status to 'cancelled'
-      fetchTripsData(); // Re-fetch to update list and canCreateTrip state
+      await fbDeleteTrip(tripId); 
+      fetchTripsData(); 
     } catch (error) {
       console.error("Error cancelling trip:", error);
       toast({title: "خطأ في إلغاء الرحلة", variant: "destructive"});
@@ -201,7 +206,7 @@ export default function TripsPage() {
   const handleEndTrip = async (tripToEnd: Trip) => {
      try {
       await fbEndTrip(tripToEnd);
-      fetchTripsData(); // Re-fetch to update list and canCreateTrip state
+      fetchTripsData(); 
     } catch (error) {
       console.error("Error ending trip:", error);
       toast({title: "خطأ في إنهاء الرحلة", variant: "destructive"});
@@ -252,4 +257,3 @@ export default function TripsPage() {
     </div>
   );
 }
-
