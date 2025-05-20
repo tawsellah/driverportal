@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react'; // Added useCallback
 import Link from 'next/link';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,13 +29,12 @@ function TripCard({ trip, onDelete, onEndTrip }: { trip: Trip; onDelete: (tripId
 
   const handleDelete = () => {
     onDelete(trip.id);
-    toast({ title: "تم إلغاء الرحلة بنجاح" });
+    // Toast is now shown in the main page's handleDeleteTrip for consistency
   };
 
   const handleEndTrip = () => {
     onEndTrip(trip);
-    const earnings = (trip.selectedSeats?.length || 0) * trip.pricePerPassenger;
-    toast({ title: "تم إنهاء الرحلة بنجاح", description: `الأرباح: ${earnings.toFixed(2)} د.أ` });
+    // Toast is now shown in the main page's handleEndTrip
   };
 
   const startPointName = JORDAN_GOVERNORATES.find(g => g.id === trip.startPoint)?.name || trip.startPoint;
@@ -159,44 +158,75 @@ function TripCard({ trip, onDelete, onEndTrip }: { trip: Trip; onDelete: (tripId
 
 export default function TripsPage() {
   const [trips, setTrips] = useState<Trip[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true); // For initial load
   const [canCreateTrip, setCanCreateTrip] = useState(false);
   const router = useRouter();
-  const { toast } = useToast(); // Added toast
+  const { toast } = useToast();
 
-  const fetchTripsData = async () => {
-    setIsLoading(true);
+  const fetchTripsData = useCallback(async (isInitialLoad = false) => {
+    if (isInitialLoad) {
+      setIsLoading(true);
+    }
     const currentUser = auth.currentUser;
     if (currentUser) {
-      const loadedTrips = await getUpcomingAndOngoingTripsForDriver(currentUser.uid);
-      setTrips(loadedTrips);
-      const activeTrip = await getActiveTripForDriver(currentUser.uid);
-      setCanCreateTrip(!activeTrip);
-
+      try {
+        // console.log(`Fetching trips for user: ${currentUser.uid}, initial: ${isInitialLoad}`);
+        const loadedTrips = await getUpcomingAndOngoingTripsForDriver(currentUser.uid);
+        setTrips(loadedTrips);
+        const activeTrip = await getActiveTripForDriver(currentUser.uid);
+        setCanCreateTrip(!activeTrip);
+      } catch (error) {
+        console.error("Error fetching trip data:", error);
+        toast({ title: "خطأ في جلب بيانات الرحلات", description: "الرجاء المحاولة مرة أخرى لاحقاً.", variant: "destructive" });
+      } finally {
+        if (isInitialLoad) {
+          setIsLoading(false);
+        }
+      }
     } else {
-      router.push('/auth/signin'); 
+      // If no current user during a fetch call (e.g. poll after logout)
+      setTrips([]);
+      setCanCreateTrip(false);
+      if (isInitialLoad) {
+        setIsLoading(false);
+      }
     }
-    setIsLoading(false);
-  };
+  }, [toast]); // Dependencies: toast is stable. setTrips, setCanCreateTrip, setIsLoading are from useState, inherently stable.
 
+  // Effect for initial data load and auth state changes
   useEffect(() => {
     const unsubscribe = onAuthUserChangedListener(user => {
       if (user) {
-        fetchTripsData();
+        fetchTripsData(true); // Pass true for initial load
       } else {
-        setIsLoading(false); // Stop loading if no user
-        setTrips([]); // Clear trips
-        setCanCreateTrip(false); // Cannot create if not logged in
+        setTrips([]);
+        setCanCreateTrip(false);
+        setIsLoading(false); // Ensure loading is stopped
         router.push('/auth/signin');
       }
     });
     return () => unsubscribe();
-  }, [router]);
+  }, [router, fetchTripsData]);
+
+  // Effect for polling every minute
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      if (auth.currentUser) { // Check if user is still logged in
+        // console.log("Polling for trip updates..."); // For debugging
+        fetchTripsData(false); // Pass false for subsequent polls (not initial load)
+      }
+    }, 60000); // 60000 ms = 1 minute
+
+    return () => {
+      clearInterval(intervalId); // Cleanup interval on component unmount
+    };
+  }, [fetchTripsData]); // Rerun if fetchTripsData changes (it's memoized)
 
   const handleDeleteTrip = async (tripId: string) => {
     try {
       await fbDeleteTrip(tripId); 
-      fetchTripsData(); 
+      toast({ title: "تم إلغاء الرحلة بنجاح" });
+      fetchTripsData(true); // Refresh data after delete, treat as initial load for UI consistency
     } catch (error) {
       console.error("Error cancelling trip:", error);
       toast({title: "خطأ في إلغاء الرحلة", variant: "destructive"});
@@ -206,7 +236,9 @@ export default function TripsPage() {
   const handleEndTrip = async (tripToEnd: Trip) => {
      try {
       await fbEndTrip(tripToEnd);
-      fetchTripsData(); 
+      const earnings = (tripToEnd.selectedSeats?.length || 0) * tripToEnd.pricePerPassenger;
+      toast({ title: "تم إنهاء الرحلة بنجاح", description: `الأرباح: ${earnings.toFixed(2)} د.أ` });
+      fetchTripsData(true); // Refresh data after end, treat as initial load
     } catch (error) {
       console.error("Error ending trip:", error);
       toast({title: "خطأ في إنهاء الرحلة", variant: "destructive"});
@@ -257,3 +289,4 @@ export default function TripsPage() {
     </div>
   );
 }
+
