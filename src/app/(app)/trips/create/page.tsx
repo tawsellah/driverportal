@@ -22,7 +22,7 @@ import { JORDAN_GOVERNORATES, SEAT_CONFIG } from '@/lib/constants';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { auth } from '@/lib/firebase';
-import { addTrip, getActiveTripForDriver, type NewTripData } from '@/lib/firebaseService';
+import { addTrip, getActiveTripForDriver, type NewTripData, getStopStationsForRoute, addStopsToRoute } from '@/lib/firebaseService';
 
 const tripSchema = z.object({
   startPoint: z.string().min(1, { message: "نقطة الانطلاق مطلوبة" }),
@@ -31,7 +31,7 @@ const tripSchema = z.object({
   tripDate: z.date({ required_error: "تاريخ الرحلة مطلوب" }),
   tripTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "صيغة الوقت غير صحيحة (HH:MM)" }),
   expectedArrivalTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "صيغة الوقت غير صحيحة (HH:MM)" }),
-  offeredSeatIds: z.array(z.string() as z.ZodType<SeatID>).min(1, { message: "يجب اختيار مقعد واحد على الأقل لتقديمه" }), // This will be used by the form
+  offeredSeatIds: z.array(z.string() as z.ZodType<SeatID>).min(1, { message: "يجب اختيار مقعد واحد على الأقل لتقديمه" }),
   meetingPoint: z.string().min(3, { message: "مكان اللقاء مطلوب (3 أحرف على الأقل)" }),
   pricePerPassenger: z.coerce.number().min(0, { message: "السعر يجب أن يكون رقمًا موجبًا" }),
   notes: z.string().optional(),
@@ -50,6 +50,20 @@ export default function CreateTripPage() {
   const [hasActiveTrip, setHasActiveTrip] = useState(false);
   const [minCalendarDate, setMinCalendarDate] = useState<Date | null>(null);
 
+  const { control, handleSubmit, register, setValue, watch, formState: { errors }, getValues } = useForm<TripFormValues>({
+    resolver: zodResolver(tripSchema),
+    defaultValues: {
+      stops: [],
+      offeredSeatIds: [],
+      pricePerPassenger: 0,
+    },
+  });
+
+  const { fields, append, remove, replace } = useFieldArray({ control, name: "stops" });
+  const offeredSeatIdsFromForm = watch("offeredSeatIds");
+  const watchedStartPoint = watch("startPoint");
+  const watchedDestination = watch("destination");
+
   useEffect(() => {
     const checkActiveTrip = async () => {
       const currentUser = auth.currentUser;
@@ -64,20 +78,35 @@ export default function CreateTripPage() {
       setIsCheckingActiveTrip(false);
     };
     checkActiveTrip();
-    setMinCalendarDate(new Date(new Date().setHours(0,0,0,0)));
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    setMinCalendarDate(today);
   }, [router]);
 
-  const { control, handleSubmit, register, setValue, watch, formState: { errors } } = useForm<TripFormValues>({
-    resolver: zodResolver(tripSchema),
-    defaultValues: {
-      stops: [],
-      offeredSeatIds: [], // Form uses this array
-      pricePerPassenger: 0,
-    },
-  });
+  useEffect(() => {
+    const fetchAndSetSuggestedStops = async () => {
+      if (watchedStartPoint && watchedDestination) {
+        const suggestedStops = await getStopStationsForRoute(watchedStartPoint, watchedDestination);
+        if (suggestedStops && suggestedStops.length > 0) {
+          // Filter out any empty strings that might have been saved previously
+          const validSuggestedStops = suggestedStops.filter(stop => stop && stop.trim() !== '');
+          if (validSuggestedStops.length > 0) {
+            replace(validSuggestedStops);
+            toast({ title: "تم تحميل محطات التوقف المقترحة", description: "يمكنك تعديلها حسب الحاجة." });
+          } else {
+            replace([]); // Clear stops if only invalid ones were found
+          }
+        } else {
+          replace([]); // Clear stops if no suggestions are found for this route
+        }
+      } else {
+        // If either start or destination is cleared, clear the stops
+         replace([]);
+      }
+    };
+    fetchAndSetSuggestedStops();
+  }, [watchedStartPoint, watchedDestination, replace, toast]);
 
-  const { fields, append, remove } = useFieldArray({ control, name: "stops" });
-  const offeredSeatIdsFromForm = watch("offeredSeatIds");
 
   const onSubmit = async (data: TripFormValues) => {
     const currentUser = auth.currentUser;
@@ -95,7 +124,6 @@ export default function CreateTripPage() {
     const [hours, minutes] = data.tripTime.split(':');
     dateTime.setHours(parseInt(hours), parseInt(minutes));
 
-    // Convert offeredSeatIds (array from form) to offeredSeatsConfig (map for Firebase)
     const offeredSeatsConfig: Record<string, boolean> = {};
     passengerSeats.forEach(seat => {
       offeredSeatsConfig[seat.id] = data.offeredSeatIds.includes(seat.id as SeatID);
@@ -104,18 +132,26 @@ export default function CreateTripPage() {
     const newTripData: NewTripData = {
       startPoint: data.startPoint,
       destination: data.destination,
-      stops: data.stops,
+      stops: data.stops?.filter(stop => stop && stop.trim() !== ''), // Ensure no empty stops are saved
       dateTime: dateTime.toISOString(),
       expectedArrivalTime: data.expectedArrivalTime,
-      offeredSeatsConfig: offeredSeatsConfig, // Use the map here
+      offeredSeatsConfig: offeredSeatsConfig,
       meetingPoint: data.meetingPoint,
       pricePerPassenger: data.pricePerPassenger,
       notes: data.notes,
     };
 
     try {
-      await addTrip(currentUser.uid, newTripData);
+      const createdTrip = await addTrip(currentUser.uid, newTripData);
       toast({ title: "تم إنشاء الرحلة بنجاح!" });
+
+      // Save/update stop stations for this route
+      if (data.startPoint && data.destination && data.stops) {
+        const validStops = data.stops.filter(stop => stop && stop.trim() !== '');
+        if (validStops.length > 0) {
+          await addStopsToRoute(data.startPoint, data.destination, validStops);
+        }
+      }
       router.push('/trips');
     } catch (error) {
       console.error("Error creating trip:", error);
@@ -229,7 +265,9 @@ export default function CreateTripPage() {
                 </Button>
               </div>
             ))}
-            {errors.stops && errors.stops.map((error, index) => error && <p key={index} className="mt-1 text-sm text-destructive">{error.message}</p>)}
+            {errors.stops && errors.stops.length > 0 && errors.stops.map((stopError, index) => (
+                stopError && <p key={`stop-error-${index}`} className="mt-1 text-sm text-destructive">{stopError.message}</p>
+            ))}
             <Button type="button" variant="outline" size="sm" onClick={() => append('')} className="mt-2">
               <PlusCircle className="ms-2 h-4 w-4" /> إضافة محطة توقف
             </Button>
@@ -263,7 +301,7 @@ export default function CreateTripPage() {
                         onSelect={field.onChange}
                         initialFocus
                         locale={ar}
-                        disabled={(date) => minCalendarDate ? date < minCalendarDate : true}
+                        disabled={(date) => minCalendarDate ? date < minCalendarDate : false}
                       />
                     </PopoverContent>
                   </Popover>

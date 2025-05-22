@@ -31,7 +31,7 @@ export interface UserProfile {
   vehicleYear?: string;
   vehicleColor?: string;
   vehiclePlateNumber?: string;
-  vehiclePhotosUrl?: string | null; // This was vehiclePhotoUrl in signup, ensure consistency if needed
+  vehiclePhotosUrl?: string | null;
   rating?: number;
   tripsCount?: number;
   paymentMethods?: {
@@ -47,7 +47,7 @@ export interface PassengerBookingDetails {
   userId: string;
   phone: string;
   fullName: string; // Added fullName directly
-  bookedAt: any; // Typically a timestamp
+  bookedAt: any; 
 }
 
 // Trip Interface
@@ -59,20 +59,18 @@ export interface Trip {
   destination: string; 
   dateTime: string; 
   expectedArrivalTime: string; 
-  offeredSeatsConfig: Record<string, boolean | PassengerBookingDetails>; // SeatID mapped to boolean or booking details
-  // selectedSeats: SeatID[]; // This can be derived from offeredSeatsConfig if needed, or kept for quick checks. For simplicity, let's assume it's derived.
+  offeredSeatsConfig: Record<string, boolean | PassengerBookingDetails>; 
   meetingPoint: string;
   pricePerPassenger: number;
   notes?: string;
   status: 'upcoming' | 'ongoing' | 'completed' | 'cancelled';
   earnings?: number;
-  // passengers field was for mock data, now real data is in offeredSeatsConfig
   createdAt: any; 
   updatedAt?: any; 
 }
 
 
-export type NewTripData = Omit<Trip, 'id' | 'status' /*| 'selectedSeats'*/ | 'earnings' | 'driverId' | 'createdAt' | 'updatedAt'>;
+export type NewTripData = Omit<Trip, 'id' | 'status' | 'earnings' | 'driverId' | 'createdAt' | 'updatedAt'>;
 
 // --- Auth Service ---
 export const getCurrentUser = (): FirebaseAuthUser | null => {
@@ -113,6 +111,8 @@ export const updateUserProfile = async (userId: string, updates: Partial<UserPro
 // --- Trip Service ---
 const CURRENT_TRIPS_PATH = 'currentTrips';
 const FINISHED_TRIPS_PATH = 'finishedTrips';
+const STOP_STATIONS_PATH = 'stopstations';
+
 
 export const addTrip = async (driverId: string, tripData: NewTripData): Promise<Trip> => {
   const tripId = `trip_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -121,7 +121,6 @@ export const addTrip = async (driverId: string, tripData: NewTripData): Promise<
     id: tripId,
     driverId,
     status: 'upcoming',
-    // selectedSeats: [], // Initialize as empty
     createdAt: serverTimestamp(),
   };
   const tripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
@@ -136,13 +135,6 @@ export const updateTrip = async (tripId: string, updates: Partial<Trip>): Promis
 };
 
 export const deleteTrip = async (tripId: string): Promise<void> => {
-  // This should ideally fetch the trip to get driverId for finishedTrips path, or change status and move later.
-  // For simplicity, just updating status. A more robust "cancel" might move it to finishedTrips with "cancelled" status.
-  // Or, as implemented, this function changes the status and the trip is moved by another mechanism or stays in currentTrips.
-  // Based on current flow, it's likely best to update status, then move it if it's truly "deleted" vs "cancelled then archived"
-  // For now, just update status to 'cancelled'. The TripsPage logic for 'endTrip' handles moving.
-  // If "delete" means immediate removal or archiving as cancelled, that needs specific logic.
-  // Current expectation from prompt: 'delete' implies 'cancel' for upcoming trips.
   await updateTrip(tripId, { status: 'cancelled', updatedAt: serverTimestamp() });
 };
 
@@ -152,9 +144,6 @@ export const getTripById = async (tripId: string): Promise<Trip | null> => {
     if (snapshot.exists()) {
         return snapshot.val() as Trip;
     }
-    // Optionally, check finishedTrips if a trip could be there by ID
-    // const finishedTripRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/someDriverId/${tripId}`); // This is more complex
-    // For now, only checking currentTrips
     return null;
 };
 
@@ -218,7 +207,7 @@ export const endTrip = async (trip: Trip, earnings: number): Promise<void> => {
   const finishedTripData: Trip = {
     ...trip,
     status: 'completed',
-    earnings: earnings, // Use calculated earnings passed to function
+    earnings: earnings,
     updatedAt: serverTimestamp(),
   };
   
@@ -246,4 +235,40 @@ export const getTrips = async (): Promise<Trip[]> => {
     });
   }
   return trips;
+};
+
+// --- Stop Stations Service ---
+export const generateRouteKey = (startPointId: string, destinationId: string): string => {
+  return `${startPointId.toLowerCase()}_to_${destinationId.toLowerCase()}`;
+};
+
+export const getStopStationsForRoute = async (startPointId: string, destinationId: string): Promise<string[] | null> => {
+  if (!startPointId || !destinationId) return null;
+  const routeKey = generateRouteKey(startPointId, destinationId);
+  const routeRef = ref(databaseInternal, `${STOP_STATIONS_PATH}/${routeKey}/stops`);
+  const snapshot = await get(routeRef);
+  if (snapshot.exists()) {
+    return snapshot.val() as string[];
+  }
+  return null;
+};
+
+export const addStopsToRoute = async (startPointId: string, destinationId: string, newStops: string[]): Promise<void> => {
+  if (!startPointId || !destinationId) return;
+  const routeKey = generateRouteKey(startPointId, destinationId);
+  const routeStopsRef = ref(databaseInternal, `${STOP_STATIONS_PATH}/${routeKey}/stops`);
+  const routeLastUpdatedRef = ref(databaseInternal, `${STOP_STATIONS_PATH}/${routeKey}/lastUpdated`);
+
+  const snapshot = await get(routeStopsRef);
+  let existingStops: string[] = [];
+  if (snapshot.exists()) {
+    existingStops = snapshot.val() as string[];
+  }
+
+  const combinedStops = new Set([...existingStops, ...newStops.filter(stop => stop && stop.trim() !== '')]);
+  const uniqueStopsArray = Array.from(combinedStops);
+
+  await set(routeStopsRef, uniqueStopsArray);
+  await set(routeLastUpdatedRef, serverTimestamp());
+  console.log(`Stops for route ${routeKey} updated:`, uniqueStopsArray);
 };
