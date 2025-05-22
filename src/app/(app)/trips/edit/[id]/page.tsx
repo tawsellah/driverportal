@@ -77,8 +77,8 @@ export default function EditTripPage() {
 
   const { fields, append, remove } = useFieldArray({ control, name: "stops" });
   const offeredSeatsConfigFromForm = watch("offeredSeatsConfig");
-  const watchedStartPoint = watch("startPoint"); // Watch for changes to re-fetch suggestions
-  const watchedDestination = watch("destination"); // Watch for changes to re-fetch suggestions
+  const watchedStartPoint = watch("startPoint"); 
+  const watchedDestination = watch("destination"); 
 
   useEffect(() => {
     const today = new Date();
@@ -113,7 +113,7 @@ export default function EditTripPage() {
             pricePerPassenger: foundTrip.pricePerPassenger,
             notes: foundTrip.notes || '',
           });
-          // Fetch initial stop suggestions for the loaded trip
+          
           if (foundTrip.startPoint && foundTrip.destination) {
             const suggestedStops = await getStopStationsForRoute(foundTrip.startPoint, foundTrip.destination);
             if (suggestedStops) {
@@ -137,20 +137,24 @@ export default function EditTripPage() {
     fetchTrip();
   }, [tripId, reset, router, toast]);
 
-  // Fetch route-specific stops when startPoint or destination changes
   useEffect(() => {
     const fetchRouteStops = async () => {
       if (watchedStartPoint && watchedDestination) {
         const suggestedStops = await getStopStationsForRoute(watchedStartPoint, watchedDestination);
         setRouteSpecificStopSuggestions(suggestedStops?.filter(s => s && s.trim() !== '') || []);
+         // DO NOT automatically fill stops:
+         // const currentStops = getValues("stops");
+         // if (currentStops?.length === 0 && suggestedStops && suggestedStops.length > 0) {
+         //   replace(suggestedStops.filter(s => s && s.trim() !== ''));
+         // }
       } else {
         setRouteSpecificStopSuggestions([]);
       }
     };
-    if (!isFetchingTrip) { // Only fetch if initial trip load is done
+    if (!isFetchingTrip) { 
         fetchRouteStops();
     }
-  }, [watchedStartPoint, watchedDestination, isFetchingTrip]);
+  }, [watchedStartPoint, watchedDestination, isFetchingTrip]); // Removed getValues, replace
 
   const filteredDynamicSuggestions = useMemo(() => {
     if (!currentStopSearchTerm.trim() || !routeSpecificStopSuggestions || routeSpecificStopSuggestions.length === 0) {
@@ -465,6 +469,8 @@ export default function EditTripPage() {
     </Card>
   );
 }
+    
+
     
 
     

@@ -98,28 +98,24 @@ export default function CreateTripPage() {
         const suggestedStops = await getStopStationsForRoute(watchedStartPoint, watchedDestination);
         if (suggestedStops && suggestedStops.length > 0) {
           const validSuggestedStops = suggestedStops.filter(stop => stop && stop.trim() !== '');
-          setRouteSpecificStopSuggestions(validSuggestedStops); // Store for dynamic suggestions
-          if (validSuggestedStops.length > 0) {
-            replace(validSuggestedStops.map(stopName => stopName));
-            toast({ title: "تم تحميل محطات التوقف المقترحة", description: "يمكنك تعديلها حسب الحاجة." });
-          } else {
-            replace([]);
-          }
+          setRouteSpecificStopSuggestions(validSuggestedStops);
+          // DO NOT automatically fill stops: replace(validSuggestedStops.map(stopName => stopName));
+          // toast({ title: "تم تحميل محطات التوقف المقترحة", description: "يمكنك تعديلها حسب الحاجة." });
         } else {
           setRouteSpecificStopSuggestions([]);
-          replace([]);
+          // DO NOT automatically clear stops if none found for the route: replace([]);
         }
       } else {
          setRouteSpecificStopSuggestions([]);
-         replace([]);
+         // DO NOT automatically clear stops if route is incomplete: replace([]);
       }
     };
     fetchAndSetSuggestedStops();
-  }, [watchedStartPoint, watchedDestination, replace, toast]);
+  }, [watchedStartPoint, watchedDestination, toast]); // Removed 'replace' from dependencies as it's no longer called here
 
   const filteredDynamicSuggestions = useMemo(() => {
     if (!currentStopSearchTerm.trim() || !routeSpecificStopSuggestions || routeSpecificStopSuggestions.length === 0) {
-      return []; // No search term or no base suggestions, so no dynamic suggestions
+      return [];
     }
     return routeSpecificStopSuggestions.filter(suggestion =>
       suggestion.toLowerCase().includes(currentStopSearchTerm.toLowerCase())
@@ -428,6 +424,8 @@ export default function CreateTripPage() {
     </Card>
   );
 }
+    
+
     
 
     
