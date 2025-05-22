@@ -1,10 +1,11 @@
 
 "use client";
 
-import { useEffect, useState, useCallback } from 'react'; // Added useCallback
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Plus, Edit3, Trash2, Users, Route, MapPin, CalendarDays, Clock, Armchair, DollarSign, Loader2, AlertTriangle, Ban, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -20,30 +21,63 @@ import {
 } from "@/components/ui/alert-dialog";
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { JORDAN_GOVERNORATES, SEAT_CONFIG } from '@/lib/constants';
-import { auth, getUpcomingAndOngoingTripsForDriver, deleteTrip as fbDeleteTrip, endTrip as fbEndTrip, type Trip, getActiveTripForDriver, onAuthUserChangedListener } from '@/lib/firebaseService';
+import { JORDAN_GOVERNORATES, SEAT_CONFIG, type SeatID } from '@/lib/constants';
+import { 
+    auth, 
+    getUpcomingAndOngoingTripsForDriver, 
+    deleteTrip as fbDeleteTrip, 
+    endTrip as fbEndTrip, 
+    type Trip, 
+    getActiveTripForDriver, 
+    onAuthUserChangedListener,
+    getUserProfile, // Import getUserProfile
+    type PassengerBookingDetails // Import PassengerBookingDetails
+} from '@/lib/firebaseService';
 import { useRouter } from 'next/navigation';
 
-function TripCard({ trip, onDelete, onEndTrip }: { trip: Trip; onDelete: (tripId: string) => void; onEndTrip: (trip: Trip) => void; }) {
+interface DisplayPassengerDetails {
+  seatId: string;
+  seatName: string;
+  passengerName: string;
+  passengerPhone: string;
+}
+
+function TripCard({ 
+    trip, 
+    onDelete, 
+    onEndTrip,
+    onShowPassengers 
+}: { 
+    trip: Trip; 
+    onDelete: (tripId: string) => void; 
+    onEndTrip: (trip: Trip) => void;
+    onShowPassengers: (trip: Trip) => void;
+}) {
   const { toast } = useToast();
 
   const handleDelete = () => {
     onDelete(trip.id);
-    // Toast is now shown in the main page's handleDeleteTrip for consistency
   };
 
   const handleEndTrip = () => {
     onEndTrip(trip);
-    // Toast is now shown in the main page's handleEndTrip
   };
 
   const startPointName = JORDAN_GOVERNORATES.find(g => g.id === trip.startPoint)?.name || trip.startPoint;
   const destinationName = JORDAN_GOVERNORATES.find(g => g.id === trip.destination)?.name || trip.destination;
   const stopNames = trip.stops?.map(s => JORDAN_GOVERNORATES.find(g => g.id === s)?.name || s).join('، ');
 
-  const totalOfferedSeats = Object.values(trip.offeredSeatsConfig || {}).filter(isOffered => isOffered).length;
-  const currentAvailableSeats = totalOfferedSeats - (trip.selectedSeats?.length || 0);
-
+  const totalOfferedSeats = trip.offeredSeatsConfig ? Object.values(trip.offeredSeatsConfig).filter(isOffered => isOffered === true || typeof isOffered === 'object').length : 0;
+  
+  let bookedSeatsCount = 0;
+  if (trip.offeredSeatsConfig) {
+    Object.values(trip.offeredSeatsConfig).forEach(seatValue => {
+      if (typeof seatValue === 'object' && seatValue !== null) {
+        bookedSeatsCount++;
+      }
+    });
+  }
+  const currentAvailableSeats = totalOfferedSeats - bookedSeatsCount;
 
   const ArrowLeftShort = ({ className }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className={`inline-block ${className}`} viewBox="0 0 16 16">
@@ -80,10 +114,15 @@ function TripCard({ trip, onDelete, onEndTrip }: { trip: Trip; onDelete: (tripId
           <Users className="ms-2 h-4 w-4 text-muted-foreground" />
           المقاعد المتاحة: {currentAvailableSeats} ({totalOfferedSeats} معروضة)
         </div>
-        {trip.selectedSeats && trip.selectedSeats.length > 0 && (
+        {bookedSeatsCount > 0 && (
           <div className="flex items-center">
             <Armchair className="ms-2 h-4 w-4 text-muted-foreground" />
-            المقاعد المحجوزة: {trip.selectedSeats.map(s => SEAT_CONFIG[s]?.name || s.replace(/_/g, ' ')).join('، ')}
+            المقاعد المحجوزة: {
+              Object.entries(trip.offeredSeatsConfig || {})
+                .filter(([_, seatValue]) => typeof seatValue === 'object' && seatValue !== null)
+                .map(([seatId, _]) => SEAT_CONFIG[seatId as SeatID]?.name || seatId.replace(/_/g, ' '))
+                .join('، ')
+            }
           </div>
         )}
         <div className="flex items-center">
@@ -145,10 +184,8 @@ function TripCard({ trip, onDelete, onEndTrip }: { trip: Trip; onDelete: (tripId
               </AlertDialogContent>
             </AlertDialog>
          )}
-        <Button variant="secondary" size="sm" asChild>
-          <Link href={`/passengers/${trip.id}`}>
+        <Button variant="secondary" size="sm" onClick={() => onShowPassengers(trip)}>
             <Users className="ms-1 h-4 w-4" /> الركاب
-          </Link>
         </Button>
       </CardFooter>
     </Card>
@@ -158,10 +195,15 @@ function TripCard({ trip, onDelete, onEndTrip }: { trip: Trip; onDelete: (tripId
 
 export default function TripsPage() {
   const [trips, setTrips] = useState<Trip[]>([]);
-  const [isLoading, setIsLoading] = useState(true); // For initial load
+  const [isLoading, setIsLoading] = useState(true); 
   const [canCreateTrip, setCanCreateTrip] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
+
+  const [isPassengerDialogOpen, setIsPassengerDialogOpen] = useState(false);
+  const [currentTripForPassengers, setCurrentTripForPassengers] = useState<Trip | null>(null);
+  const [passengerDetailsList, setPassengerDetailsList] = useState<DisplayPassengerDetails[]>([]);
+  const [isLoadingPassengerDetails, setIsLoadingPassengerDetails] = useState(false);
 
   const fetchTripsData = useCallback(async (isInitialLoad = false) => {
     if (isInitialLoad) {
@@ -170,7 +212,6 @@ export default function TripsPage() {
     const currentUser = auth.currentUser;
     if (currentUser) {
       try {
-        // console.log(`Fetching trips for user: ${currentUser.uid}, initial: ${isInitialLoad}`);
         const loadedTrips = await getUpcomingAndOngoingTripsForDriver(currentUser.uid);
         setTrips(loadedTrips);
         const activeTrip = await getActiveTripForDriver(currentUser.uid);
@@ -184,49 +225,45 @@ export default function TripsPage() {
         }
       }
     } else {
-      // If no current user during a fetch call (e.g. poll after logout)
       setTrips([]);
       setCanCreateTrip(false);
       if (isInitialLoad) {
         setIsLoading(false);
       }
     }
-  }, [toast]); // Dependencies: toast is stable. setTrips, setCanCreateTrip, setIsLoading are from useState, inherently stable.
+  }, [toast]); 
 
-  // Effect for initial data load and auth state changes
   useEffect(() => {
     const unsubscribe = onAuthUserChangedListener(user => {
       if (user) {
-        fetchTripsData(true); // Pass true for initial load
+        fetchTripsData(true); 
       } else {
         setTrips([]);
         setCanCreateTrip(false);
-        setIsLoading(false); // Ensure loading is stopped
+        setIsLoading(false); 
         router.push('/auth/signin');
       }
     });
     return () => unsubscribe();
   }, [router, fetchTripsData]);
 
-  // Effect for polling every minute
   useEffect(() => {
     const intervalId = setInterval(() => {
-      if (auth.currentUser) { // Check if user is still logged in
-        // console.log("Polling for trip updates..."); // For debugging
-        fetchTripsData(false); // Pass false for subsequent polls (not initial load)
+      if (auth.currentUser) { 
+        fetchTripsData(false); 
       }
-    }, 60000); // 60000 ms = 1 minute
+    }, 60000); 
 
     return () => {
-      clearInterval(intervalId); // Cleanup interval on component unmount
+      clearInterval(intervalId); 
     };
-  }, [fetchTripsData]); // Rerun if fetchTripsData changes (it's memoized)
+  }, [fetchTripsData]); 
 
   const handleDeleteTrip = async (tripId: string) => {
     try {
       await fbDeleteTrip(tripId); 
       toast({ title: "تم إلغاء الرحلة بنجاح" });
-      fetchTripsData(true); // Refresh data after delete, treat as initial load for UI consistency
+      fetchTripsData(true); 
     } catch (error) {
       console.error("Error cancelling trip:", error);
       toast({title: "خطأ في إلغاء الرحلة", variant: "destructive"});
@@ -235,15 +272,82 @@ export default function TripsPage() {
 
   const handleEndTrip = async (tripToEnd: Trip) => {
      try {
-      await fbEndTrip(tripToEnd);
-      const earnings = (tripToEnd.selectedSeats?.length || 0) * tripToEnd.pricePerPassenger;
+      let bookedSeatsCount = 0;
+      if (tripToEnd.offeredSeatsConfig) {
+        Object.values(tripToEnd.offeredSeatsConfig).forEach(seatValue => {
+          if (typeof seatValue === 'object' && seatValue !== null) {
+            bookedSeatsCount++;
+          }
+        });
+      }
+      const earnings = bookedSeatsCount * tripToEnd.pricePerPassenger;
+      await fbEndTrip(tripToEnd, earnings); // Pass calculated earnings
       toast({ title: "تم إنهاء الرحلة بنجاح", description: `الأرباح: ${earnings.toFixed(2)} د.أ` });
-      fetchTripsData(true); // Refresh data after end, treat as initial load
+      fetchTripsData(true); 
     } catch (error) {
       console.error("Error ending trip:", error);
       toast({title: "خطأ في إنهاء الرحلة", variant: "destructive"});
     }
   };
+
+  const showPassengerDetails = async (trip: Trip) => {
+    if (!trip || !trip.offeredSeatsConfig) {
+      setPassengerDetailsList([]);
+      setIsPassengerDialogOpen(true);
+      setCurrentTripForPassengers(trip);
+      setIsLoadingPassengerDetails(false); // Ensure loader stops if no config
+      return;
+    }
+
+    setCurrentTripForPassengers(trip);
+    setIsLoadingPassengerDetails(true);
+    setIsPassengerDialogOpen(true);
+    setPassengerDetailsList([]); 
+
+    const passengerPromises = Object.entries(trip.offeredSeatsConfig)
+      .filter(([_, seatValue]) => typeof seatValue === 'object' && seatValue !== null && 'userId' in seatValue)
+      .map(async ([seatId, bookingDetails]) => {
+        const typedBookingDetails = bookingDetails as PassengerBookingDetails;
+        const seatName = SEAT_CONFIG[seatId as SeatID]?.name || seatId.replace(/_/g, ' ');
+        
+        let passengerName = 'بيانات الراكب غير متوفرة'; 
+
+        if (typedBookingDetails.userId) {
+          try {
+            const profile = await getUserProfile(typedBookingDetails.userId);
+            if (profile && profile.fullName && profile.fullName.trim() !== '') {
+              passengerName = profile.fullName;
+            } else if (profile) {
+              passengerName = 'اسم الراكب غير مسجل';
+            } else {
+              passengerName = 'بيانات الراكب غير متوفرة';
+            }
+          } catch (error) {
+            console.error(`Error fetching profile for userId ${typedBookingDetails.userId}:`, error);
+            passengerName = 'خطأ في تحميل اسم الراكب';
+          }
+        } else {
+          passengerName = 'معرّف الراكب مفقود';
+        }
+
+        return {
+          seatId,
+          seatName,
+          passengerName,
+          passengerPhone: typedBookingDetails.phone || 'غير متوفر',
+        };
+      });
+
+    try {
+      const resolvedPassengers = await Promise.all(passengerPromises);
+      setPassengerDetailsList(resolvedPassengers);
+    } catch (error) {
+      console.error("Error resolving passenger details:", error);
+    } finally {
+      setIsLoadingPassengerDetails(false);
+    }
+  };
+
 
   if (isLoading) {
     return (
@@ -253,6 +357,10 @@ export default function TripsPage() {
     );
   }
   
+  const destinationName = currentTripForPassengers?.destination 
+    ? (JORDAN_GOVERNORATES.find(g => g.id === currentTripForPassengers.destination)?.name || currentTripForPassengers.destination)
+    : '';
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
@@ -282,11 +390,55 @@ export default function TripsPage() {
       ) : (
         <div>
           {trips.map(trip => (
-            <TripCard key={trip.id} trip={trip} onDelete={handleDeleteTrip} onEndTrip={handleEndTrip} />
+            <TripCard 
+                key={trip.id} 
+                trip={trip} 
+                onDelete={handleDeleteTrip} 
+                onEndTrip={handleEndTrip}
+                onShowPassengers={showPassengerDetails} 
+            />
           ))}
         </div>
       )}
+
+      <Dialog open={isPassengerDialogOpen} onOpenChange={setIsPassengerDialogOpen}>
+        <DialogContent className="sm:max-w-[425px] md:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>ركاب الرحلة إلى {destinationName}</DialogTitle>
+          </DialogHeader>
+          {isLoadingPassengerDetails ? (
+            <div className="flex justify-center items-center h-32">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : passengerDetailsList.length === 0 ? (
+            <p className="text-muted-foreground text-center py-4">لا يوجد ركاب مسجلين في هذه الرحلة بعد.</p>
+          ) : (
+            <div className="max-h-[60vh] overflow-y-auto p-1">
+              <ul className="space-y-3">
+                {passengerDetailsList.map(passenger => (
+                  <li key={passenger.seatId} className="flex justify-between items-center p-3 border rounded-md shadow-sm">
+                    <div>
+                      <p className="font-semibold">{passenger.passengerName}</p>
+                      <p className="text-sm text-muted-foreground">المقعد: {passenger.seatName}</p>
+                    </div>
+                    {passenger.passengerPhone && passenger.passengerPhone !== 'غير متوفر' && (
+                       <Button variant="outline" size="sm" asChild>
+                         <a href={`tel:${passenger.passengerPhone}`}>اتصال</a>
+                       </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="secondary">إغلاق</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
-
