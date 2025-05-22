@@ -27,11 +27,11 @@ import { addTrip, getActiveTripForDriver, type NewTripData, getStopStationsForRo
 const tripSchema = z.object({
   startPoint: z.string().min(1, { message: "نقطة الانطلاق مطلوبة" }),
   destination: z.string().min(1, { message: "الوجهة مطلوبة" }),
-  stops: z.array(z.string().min(1, { message: "اسم المحطة مطلوب" })).optional(),
+  stops: z.array(z.string().min(1, { message: "اسم المحطة مطلوب (حرف واحد على الأقل)" })).optional(),
   tripDate: z.date({ required_error: "تاريخ الرحلة مطلوب" }),
   tripTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "صيغة الوقت غير صحيحة (HH:MM)" }),
   expectedArrivalTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "صيغة الوقت غير صحيحة (HH:MM)" }),
-  offeredSeatIds: z.array(z.string() as z.ZodType<SeatID>).min(1, { message: "يجب اختيار مقعد واحد على الأقل لتقديمه" }),
+  offeredSeatsConfig: z.record(z.boolean()),
   meetingPoint: z.string().min(3, { message: "مكان اللقاء مطلوب (3 أحرف على الأقل)" }),
   pricePerPassenger: z.coerce.number().min(0, { message: "السعر يجب أن يكون رقمًا موجبًا" }),
   notes: z.string().optional(),
@@ -50,17 +50,20 @@ export default function CreateTripPage() {
   const [hasActiveTrip, setHasActiveTrip] = useState(false);
   const [minCalendarDate, setMinCalendarDate] = useState<Date | null>(null);
 
-  const { control, handleSubmit, register, setValue, watch, formState: { errors }, getValues } = useForm<TripFormValues>({
+  const { control, handleSubmit, register, setValue, watch, formState: { errors }, getValues, resetField } = useForm<TripFormValues>({
     resolver: zodResolver(tripSchema),
     defaultValues: {
       stops: [],
-      offeredSeatIds: [],
+      offeredSeatsConfig: passengerSeats.reduce((acc, seat) => {
+        acc[seat.id] = false;
+        return acc;
+      }, {} as Record<string, boolean>),
       pricePerPassenger: 0,
     },
   });
 
   const { fields, append, remove, replace } = useFieldArray({ control, name: "stops" });
-  const offeredSeatIdsFromForm = watch("offeredSeatIds");
+  const offeredSeatsConfigFromForm = watch("offeredSeatsConfig");
   const watchedStartPoint = watch("startPoint");
   const watchedDestination = watch("destination");
 
@@ -88,19 +91,17 @@ export default function CreateTripPage() {
       if (watchedStartPoint && watchedDestination) {
         const suggestedStops = await getStopStationsForRoute(watchedStartPoint, watchedDestination);
         if (suggestedStops && suggestedStops.length > 0) {
-          // Filter out any empty strings that might have been saved previously
           const validSuggestedStops = suggestedStops.filter(stop => stop && stop.trim() !== '');
           if (validSuggestedStops.length > 0) {
-            replace(validSuggestedStops);
+            replace(validSuggestedStops.map(stopName => stopName)); // Replace with string values
             toast({ title: "تم تحميل محطات التوقف المقترحة", description: "يمكنك تعديلها حسب الحاجة." });
           } else {
-            replace([]); // Clear stops if only invalid ones were found
+            replace([]);
           }
         } else {
-          replace([]); // Clear stops if no suggestions are found for this route
+          replace([]);
         }
       } else {
-        // If either start or destination is cleared, clear the stops
          replace([]);
       }
     };
@@ -124,33 +125,24 @@ export default function CreateTripPage() {
     const [hours, minutes] = data.tripTime.split(':');
     dateTime.setHours(parseInt(hours), parseInt(minutes));
 
-    const offeredSeatsConfig: Record<string, boolean> = {};
-    passengerSeats.forEach(seat => {
-      offeredSeatsConfig[seat.id] = data.offeredSeatIds.includes(seat.id as SeatID);
-    });
-
     const newTripData: NewTripData = {
       startPoint: data.startPoint,
       destination: data.destination,
-      stops: data.stops?.filter(stop => stop && stop.trim() !== ''), // Ensure no empty stops are saved
+      stops: data.stops?.filter(stop => stop && stop.trim() !== '') || [],
       dateTime: dateTime.toISOString(),
       expectedArrivalTime: data.expectedArrivalTime,
-      offeredSeatsConfig: offeredSeatsConfig,
+      offeredSeatsConfig: data.offeredSeatsConfig,
       meetingPoint: data.meetingPoint,
       pricePerPassenger: data.pricePerPassenger,
       notes: data.notes,
     };
 
     try {
-      const createdTrip = await addTrip(currentUser.uid, newTripData);
+      await addTrip(currentUser.uid, newTripData);
       toast({ title: "تم إنشاء الرحلة بنجاح!" });
 
-      // Save/update stop stations for this route
-      if (data.startPoint && data.destination && data.stops) {
-        const validStops = data.stops.filter(stop => stop && stop.trim() !== '');
-        if (validStops.length > 0) {
-          await addStopsToRoute(data.startPoint, data.destination, validStops);
-        }
+      if (data.startPoint && data.destination && newTripData.stops && newTripData.stops.length > 0) {
+        await addStopsToRoute(data.startPoint, data.destination, newTripData.stops);
       }
       router.push('/trips');
     } catch (error) {
@@ -161,14 +153,14 @@ export default function CreateTripPage() {
     }
   };
 
-  const toggleSeat = (seatId: SeatID) => {
-    const currentSeats = offeredSeatIdsFromForm || [];
-    const newSeats = currentSeats.includes(seatId)
-      ? currentSeats.filter(id => id !== seatId)
-      : [...currentSeats, seatId];
-    setValue("offeredSeatIds", newSeats, { shouldValidate: true });
+  const toggleSeat = (seatId: string) => {
+    const currentStatus = offeredSeatsConfigFromForm[seatId];
+    setValue(`offeredSeatsConfig.${seatId}`, !currentStatus, { shouldValidate: true });
   };
   
+  const offeredSeatsCount = Object.values(offeredSeatsConfigFromForm || {}).filter(isOffered => isOffered).length;
+
+
   if (isCheckingActiveTrip) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -194,6 +186,9 @@ export default function CreateTripPage() {
       </Card>
     );
   }
+  
+  const tripDateError = errors.tripDate && (errors.tripDate as any).message; // Type assertion for zod Date error
+
 
   return (
     <Card className="max-w-2xl mx-auto">
@@ -248,27 +243,26 @@ export default function CreateTripPage() {
             {fields.map((field, index) => (
               <div key={field.id} className="flex items-center gap-2 mt-2">
                 <Controller
-                  name={`stops.${index}`}
-                  control={control}
-                  render={({ field: stopField }) => (
-                    <DropdownSearch
-                      items={governorateItems}
-                      selectedItem={governorateItems.find(item => item.id === stopField.value) || null}
-                      onSelectItem={(item) => stopField.onChange(item?.id || '')}
-                      placeholder={`محطة توقف ${index + 1}`}
-                      icon={MapPin}
-                    />
-                  )}
+                    name={`stops.${index}`}
+                    control={control}
+                    defaultValue={field.value || ""} // Use field.value from useFieldArray
+                    render={({ field: stopField }) => (
+                        <Input 
+                            {...stopField}
+                            placeholder={`محطة توقف ${index + 1}`} 
+                            className="flex-grow"
+                        />
+                    )}
                 />
                 <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} aria-label="حذف محطة">
                   <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
               </div>
             ))}
-            {errors.stops && errors.stops.length > 0 && errors.stops.map((stopError, index) => (
+            {errors.stops && errors.stops.map((stopError, index) => (
                 stopError && <p key={`stop-error-${index}`} className="mt-1 text-sm text-destructive">{stopError.message}</p>
             ))}
-            <Button type="button" variant="outline" size="sm" onClick={() => append('')} className="mt-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => append("")} className="mt-2">
               <PlusCircle className="ms-2 h-4 w-4" /> إضافة محطة توقف
             </Button>
           </div>
@@ -307,7 +301,7 @@ export default function CreateTripPage() {
                   </Popover>
                 )}
               />
-              {errors.tripDate && <p className="mt-1 text-sm text-destructive">{errors.tripDate.message}</p>}
+              {tripDateError && <p className="mt-1 text-sm text-destructive">{tripDateError}</p>}
             </div>
             <div>
               <Label htmlFor="tripTime">وقت الانطلاق</Label>
@@ -329,20 +323,21 @@ export default function CreateTripPage() {
                 <Button
                   key={seat.id}
                   type="button"
-                  variant={offeredSeatIdsFromForm.includes(seat.id as SeatID) ? "default" : "outline"}
-                  onClick={() => toggleSeat(seat.id as SeatID)}
+                  variant={offeredSeatsConfigFromForm[seat.id] ? "default" : "outline"}
+                  onClick={() => toggleSeat(seat.id)}
                   className="flex flex-col items-center h-auto p-2 text-center"
-                  aria-pressed={offeredSeatIdsFromForm.includes(seat.id as SeatID)}
+                  aria-pressed={offeredSeatsConfigFromForm[seat.id]}
                 >
                   <Armchair className="h-6 w-6 mb-1"/>
                   <span className="text-xs">{seat.name}</span>
                 </Button>
               ))}
             </div>
-            {errors.offeredSeatIds && <p className="mt-1 text-sm text-destructive">{errors.offeredSeatIds.message}</p>}
+            {errors.offeredSeatsConfig && <p className="mt-1 text-sm text-destructive">{(errors.offeredSeatsConfig as any).message || "خطأ في اختيار المقاعد"}</p>}
             <p className="mt-1 text-sm text-muted-foreground">
-              عدد المقاعد المتاحة: {offeredSeatIdsFromForm?.length || 0}
+              عدد المقاعد المتاحة: {offeredSeatsCount || 0}
             </p>
+             {offeredSeatsCount === 0 && !errors.offeredSeatsConfig && <p className="mt-1 text-sm text-destructive">يجب اختيار مقعد واحد على الأقل</p>}
           </div>
 
           {/* Meeting Point and Price */}
@@ -373,3 +368,5 @@ export default function CreateTripPage() {
     </Card>
   );
 }
+
+    

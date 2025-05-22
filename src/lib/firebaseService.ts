@@ -1,21 +1,25 @@
 
 "use client";
 
-import { auth as authInternal , database as databaseInternal } from './firebase'; // Renamed to avoid conflict with exported auth
+import { auth as authInternal , database as databaseInternal } from './firebase'; 
 import { 
   onAuthStateChanged,
   type User as FirebaseAuthUser 
 } from 'firebase/auth';
 import { ref, set, get, child, update, remove, query, orderByChild, equalTo, serverTimestamp } from 'firebase/database';
 import type { SeatID } from './constants';
-import { SEAT_CONFIG } from './constants'; // Import SEAT_CONFIG
+import { SEAT_CONFIG } from './constants'; 
 
-// Re-export auth from firebase for direct use if needed elsewhere, or components can import from here
 export const auth = authInternal;
 export const database = databaseInternal;
 
+export interface PassengerBookingDetails {
+  userId: string;
+  phone: string;
+  fullName: string; // Passenger's full name is now directly in booking details
+  bookedAt: any; 
+}
 
-// User Profile Interface
 export interface UserProfile {
   id: string; 
   fullName: string;
@@ -42,20 +46,11 @@ export interface UserProfile {
   createdAt: any; 
 }
 
-// Passenger Booking Details Interface
-export interface PassengerBookingDetails {
-  userId: string;
-  phone: string;
-  fullName: string; // Added fullName directly
-  bookedAt: any; 
-}
-
-// Trip Interface
 export interface Trip {
   id: string; 
   driverId: string; 
   startPoint: string; 
-  stops?: string[]; 
+  stops?: string[]; // Stops are now free text
   destination: string; 
   dateTime: string; 
   expectedArrivalTime: string; 
@@ -68,7 +63,6 @@ export interface Trip {
   createdAt: any; 
   updatedAt?: any; 
 }
-
 
 export type NewTripData = Omit<Trip, 'id' | 'status' | 'earnings' | 'driverId' | 'createdAt' | 'updatedAt'>;
 
@@ -135,7 +129,24 @@ export const updateTrip = async (tripId: string, updates: Partial<Trip>): Promis
 };
 
 export const deleteTrip = async (tripId: string): Promise<void> => {
-  await updateTrip(tripId, { status: 'cancelled', updatedAt: serverTimestamp() });
+  const tripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
+  const snapshot = await get(tripRef);
+  if (snapshot.exists()) {
+    const tripToEnd = snapshot.val() as Trip;
+     if (tripToEnd.status === 'upcoming' || tripToEnd.status === 'ongoing') {
+      const updates: Partial<Trip> = { status: 'cancelled', updatedAt: serverTimestamp() };
+      await update(tripRef, updates);
+
+      // Move to finishedTrips
+      const finishedTripData: Trip = {
+        ...tripToEnd,
+        ...updates,
+      };
+      const finishedTripRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${tripToEnd.driverId}/${tripToEnd.id}`);
+      await set(finishedTripRef, finishedTripData);
+      await remove(originalTripRef); // Remove from currentTrips
+    }
+  }
 };
 
 export const getTripById = async (tripId: string): Promise<Trip | null> => {
@@ -143,6 +154,21 @@ export const getTripById = async (tripId: string): Promise<Trip | null> => {
     const snapshot = await get(tripRef);
     if (snapshot.exists()) {
         return snapshot.val() as Trip;
+    }
+    // Also check finishedTrips if not found in currentTrips (e.g., for history page access)
+    // This might need a driverId if finishedTrips are keyed by driverId first
+    // For simplicity, assuming tripId is unique across both for now, or adjust as needed
+    const finishedTripsSnapshot = await get(ref(databaseInternal, FINISHED_TRIPS_PATH));
+    if(finishedTripsSnapshot.exists()){
+        let foundTrip: Trip | null = null;
+        finishedTripsSnapshot.forEach((driverNode) => {
+            const driverTrips = driverNode.val();
+            if(driverTrips[tripId]){
+                foundTrip = driverTrips[tripId] as Trip;
+                return true; // break forEach
+            }
+        });
+        if(foundTrip) return foundTrip;
     }
     return null;
 };
@@ -195,29 +221,40 @@ export const getCompletedTripsForDriver = async (driverId: string): Promise<Trip
       trips.push(childSnapshot.val() as Trip);
     });
   }
+  // Also include cancelled trips from currentTrips if they are not moved by deleteTrip logic
+  const currentTripsSnapshot = await get(ref(databaseInternal, CURRENT_TRIPS_PATH));
+  if (currentTripsSnapshot.exists()) {
+    currentTripsSnapshot.forEach((childSnapshot) => {
+      const trip = childSnapshot.val() as Trip;
+      if (trip.driverId === driverId && trip.status === 'cancelled' && !trips.some(t => t.id === trip.id)) {
+         // This logic assumes cancelled trips might not be in finishedTrips if not explicitly moved.
+         // The improved deleteTrip should move them.
+      }
+    });
+  }
   return trips.sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());
 };
 
-export const endTrip = async (trip: Trip, earnings: number): Promise<void> => {
-  if (!trip || !trip.driverId || !trip.id) {
-    console.error("Invalid trip data for ending trip:", trip);
+export const endTrip = async (tripToEnd: Trip, earnings: number): Promise<void> => {
+  if (!tripToEnd || !tripToEnd.driverId || !tripToEnd.id) {
+    console.error("Invalid trip data for ending trip:", tripToEnd);
     throw new Error("Invalid trip data for ending trip.");
   }
   
   const finishedTripData: Trip = {
-    ...trip,
+    ...tripToEnd,
     status: 'completed',
     earnings: earnings,
     updatedAt: serverTimestamp(),
   };
   
-  const finishedTripRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${trip.driverId}/${trip.id}`);
-  const originalTripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${trip.id}`);
+  const finishedTripRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${tripToEnd.driverId}/${tripToEnd.id}`);
+  const originalTripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripToEnd.id}`);
 
   await set(finishedTripRef, finishedTripData);
   await remove(originalTripRef);
 
-  const userProfileRef = ref(databaseInternal, `users/${trip.driverId}`);
+  const userProfileRef = ref(databaseInternal, `users/${tripToEnd.driverId}`);
   const userProfileSnap = await get(userProfileRef);
   if (userProfileSnap.exists()) {
       const currentTripsCount = userProfileSnap.val().tripsCount || 0;
@@ -248,7 +285,14 @@ export const getStopStationsForRoute = async (startPointId: string, destinationI
   const routeRef = ref(databaseInternal, `${STOP_STATIONS_PATH}/${routeKey}/stops`);
   const snapshot = await get(routeRef);
   if (snapshot.exists()) {
-    return snapshot.val() as string[];
+    const stopsData = snapshot.val();
+    // Ensure stopsData is an array, handle cases where it might be an object if previously saved incorrectly
+    if (Array.isArray(stopsData)) {
+      return stopsData.filter(stop => typeof stop === 'string' && stop.trim() !== '');
+    } else if (typeof stopsData === 'object' && stopsData !== null) {
+      // Fallback for old data structure if stops were like {0: "stop1", 1: "stop2"}
+      return Object.values(stopsData).filter(stop => typeof stop === 'string' && (stop as string).trim() !== '') as string[];
+    }
   }
   return null;
 };
@@ -259,16 +303,33 @@ export const addStopsToRoute = async (startPointId: string, destinationId: strin
   const routeStopsRef = ref(databaseInternal, `${STOP_STATIONS_PATH}/${routeKey}/stops`);
   const routeLastUpdatedRef = ref(databaseInternal, `${STOP_STATIONS_PATH}/${routeKey}/lastUpdated`);
 
+  // Filter out any empty or non-string stops from input
+  const validNewStops = newStops.filter(stop => typeof stop === 'string' && stop.trim() !== '');
+
   const snapshot = await get(routeStopsRef);
   let existingStops: string[] = [];
   if (snapshot.exists()) {
-    existingStops = snapshot.val() as string[];
+    const stopsData = snapshot.val();
+    if (Array.isArray(stopsData)) {
+        existingStops = stopsData.filter(stop => typeof stop === 'string' && stop.trim() !== '');
+    } else if (typeof stopsData === 'object' && stopsData !== null) {
+        existingStops = Object.values(stopsData).filter(stop => typeof stop === 'string' && (stop as string).trim() !== '') as string[];
+    }
   }
 
-  const combinedStops = new Set([...existingStops, ...newStops.filter(stop => stop && stop.trim() !== '')]);
+  const combinedStops = new Set([...existingStops, ...validNewStops]);
   const uniqueStopsArray = Array.from(combinedStops);
 
-  await set(routeStopsRef, uniqueStopsArray);
-  await set(routeLastUpdatedRef, serverTimestamp());
-  console.log(`Stops for route ${routeKey} updated:`, uniqueStopsArray);
+  if (uniqueStopsArray.length > 0) {
+    await set(routeStopsRef, uniqueStopsArray);
+    await set(routeLastUpdatedRef, serverTimestamp());
+    console.log(`Stops for route ${routeKey} updated:`, uniqueStopsArray);
+  } else if (existingStops.length > 0 && uniqueStopsArray.length === 0) {
+    // If all stops were removed, clear them from DB
+    await set(routeStopsRef, null); 
+    await set(routeLastUpdatedRef, serverTimestamp());
+    console.log(`All stops for route ${routeKey} cleared.`);
+  }
 };
+
+    
