@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Plus, Edit3, Trash2, Users, Route, MapPin, CalendarDays, Clock, Armchair, DollarSign, Loader2, AlertTriangle, Ban, CheckCircle } from 'lucide-react';
@@ -30,7 +30,8 @@ import {
     type Trip, 
     getActiveTripForDriver, 
     onAuthUserChangedListener,
-    type PassengerBookingDetails 
+    type PassengerBookingDetails,
+    getTripById // Import getTripById
 } from '@/lib/firebaseService';
 import { useRouter } from 'next/navigation';
 
@@ -38,7 +39,7 @@ interface DisplayPassengerDetails {
   seatId: string;
   seatName: string;
   passengerName: string;
-  passengerPhone: string;
+  // passengerPhone?: string; // Phone is no longer displayed with a call button
 }
 
 function TripCard({ 
@@ -66,8 +67,6 @@ function TripCard({
   const destinationName = JORDAN_GOVERNORATES.find(g => g.id === trip.destination)?.name || trip.destination;
   const stopNames = trip.stops?.map(s => JORDAN_GOVERNORATES.find(g => g.id === s)?.name || s).join('، ');
 
-  const totalOfferedSeats = trip.offeredSeatsConfig ? Object.values(trip.offeredSeatsConfig).filter(isOffered => isOffered === true || typeof isOffered === 'object').length : 0;
-  
   let bookedSeatsCount = 0;
   if (trip.offeredSeatsConfig) {
     Object.values(trip.offeredSeatsConfig).forEach(seatValue => {
@@ -76,6 +75,7 @@ function TripCard({
       }
     });
   }
+  const totalOfferedSeats = trip.offeredSeatsConfig ? Object.values(trip.offeredSeatsConfig).filter(isOffered => isOffered === true || typeof isOffered === 'object').length : 0;
   const currentAvailableSeats = totalOfferedSeats - bookedSeatsCount;
 
   const ArrowLeftShort = ({ className }: { className?: string }) => (
@@ -156,7 +156,7 @@ function TripCard({
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>تراجع</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDelete} className={buttonVariants({variant: "destructive"})}>تأكيد الإلغاء</AlertDialogAction>
+                  <AlertDialogAction onClick={handleDelete}>تأكيد الإلغاء</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -178,7 +178,7 @@ function TripCard({
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>تراجع</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleEndTrip} className={buttonVariants({variant: "default", className: "bg-green-600 hover:bg-green-700"})}>تأكيد الإنهاء</AlertDialogAction>
+                  <AlertDialogAction onClick={handleEndTrip} className="bg-green-600 hover:bg-green-700">تأكيد الإنهاء</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -246,6 +246,7 @@ export default function TripsPage() {
     return () => unsubscribe();
   }, [router, fetchTripsData]);
 
+  // Periodic refresh of the main trips list
   useEffect(() => {
     const intervalId = setInterval(() => {
       if (auth.currentUser) { 
@@ -257,6 +258,68 @@ export default function TripsPage() {
       clearInterval(intervalId); 
     };
   }, [fetchTripsData]); 
+
+
+  const fetchAndSetPassengerDetails = useCallback(async (tripId: string, isInitialLoadDialog: boolean) => {
+    if (isInitialLoadDialog) {
+        setIsLoadingPassengerDetails(true);
+    }
+    setPassengerDetailsList([]); // Clear previous list for fresh data
+
+    try {
+      const freshlyFetchedTrip = await getTripById(tripId);
+      const resolvedPassengers: DisplayPassengerDetails[] = [];
+
+      if (freshlyFetchedTrip && freshlyFetchedTrip.offeredSeatsConfig) {
+        for (const seatId in freshlyFetchedTrip.offeredSeatsConfig) {
+          const bookingInfo = freshlyFetchedTrip.offeredSeatsConfig[seatId];
+          if (typeof bookingInfo === 'object' && bookingInfo !== null) {
+            const seatName = SEAT_CONFIG[seatId as SeatID]?.name || seatId.replace(/_/g, ' ');
+            const passengerBooking = bookingInfo as PassengerBookingDetails;
+            
+            resolvedPassengers.push({
+              seatId,
+              seatName,
+              passengerName: passengerBooking.fullName || 'اسم الراكب غير مسجل',
+              // passengerPhone: passengerBooking.phone, // Phone data available if needed later
+            });
+          }
+        }
+      }
+      setPassengerDetailsList(resolvedPassengers);
+    } catch (error) {
+      console.error("Error fetching passenger details:", error);
+      toast({ title: "خطأ في جلب بيانات الركاب", variant: "destructive" });
+      setPassengerDetailsList([]); // Ensure list is empty on error
+    } finally {
+      if (isInitialLoadDialog) {
+        setIsLoadingPassengerDetails(false);
+      }
+    }
+  }, [toast]);
+
+
+  const showPassengerDetails = useCallback(async (trip: Trip) => {
+    setCurrentTripForPassengers(trip);
+    setIsPassengerDialogOpen(true);
+    await fetchAndSetPassengerDetails(trip.id, true); // Initial fetch for the dialog
+  }, [fetchAndSetPassengerDetails]);
+
+  // Auto-refresh passenger details when dialog is open
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+    if (isPassengerDialogOpen && currentTripForPassengers) {
+      intervalId = setInterval(() => {
+        fetchAndSetPassengerDetails(currentTripForPassengers.id, false); // Subsequent fetches, don't show main loader
+      }, 30000); // Refresh every 30 seconds
+    }
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [isPassengerDialogOpen, currentTripForPassengers, fetchAndSetPassengerDetails]);
+
 
   const handleDeleteTrip = async (tripId: string) => {
     try {
@@ -280,7 +343,7 @@ export default function TripsPage() {
         });
       }
       const earnings = bookedSeatsCount * tripToEnd.pricePerPassenger;
-      await fbEndTrip(tripToEnd, earnings); // Pass calculated earnings
+      await fbEndTrip(tripToEnd, earnings);
       toast({ title: "تم إنهاء الرحلة بنجاح", description: `الأرباح: ${earnings.toFixed(2)} د.أ` });
       fetchTripsData(true); 
     } catch (error) {
@@ -288,56 +351,6 @@ export default function TripsPage() {
       toast({title: "خطأ في إنهاء الرحلة", variant: "destructive"});
     }
   };
-
-  const showPassengerDetails = async (trip: Trip) => {
-    if (!trip || !trip.offeredSeatsConfig) {
-      setPassengerDetailsList([]);
-      setCurrentTripForPassengers(trip);
-      setIsLoadingPassengerDetails(false);
-      setIsPassengerDialogOpen(true);
-      return;
-    }
-
-    setCurrentTripForPassengers(trip);
-    setIsLoadingPassengerDetails(true);
-    setPassengerDetailsList([]);
-    setIsPassengerDialogOpen(true);
-
-    const resolvedPassengers: DisplayPassengerDetails[] = [];
-
-    for (const seatId in trip.offeredSeatsConfig) {
-      const bookingInfo = trip.offeredSeatsConfig[seatId];
-      if (typeof bookingInfo === 'object' && bookingInfo !== null) {
-        // This is a booked seat with PassengerBookingDetails
-        const seatName = SEAT_CONFIG[seatId as SeatID]?.name || seatId.replace(/_/g, ' ');
-        const passengerBooking = bookingInfo as PassengerBookingDetails;
-        
-        let passengerName = passengerBooking.fullName || 'اسم الراكب غير متوفر';
-        // If fullName is not directly in bookingInfo, and you need to fetch it:
-        // if (!passengerBooking.fullName && passengerBooking.userId) {
-        //   try {
-        //     const profile = await getUserProfile(passengerBooking.userId); // Assuming getUserProfile exists
-        //     passengerName = profile?.fullName || 'راكب غير معروف';
-        //   } catch (error) {
-        //     console.error(`Error fetching profile for userId ${passengerBooking.userId}:`, error);
-        //     passengerName = 'خطأ في تحميل اسم الراكب';
-        //   }
-        // } else if (!passengerBooking.fullName) {
-        //     passengerName = 'بيانات الراكب غير كاملة';
-        // }
-
-        resolvedPassengers.push({
-          seatId,
-          seatName,
-          passengerName: passengerName,
-          passengerPhone: passengerBooking.phone || 'غير متوفر',
-        });
-      }
-    }
-    setPassengerDetailsList(resolvedPassengers);
-    setIsLoadingPassengerDetails(false);
-  };
-
 
   if (isLoading) {
     return (
@@ -411,11 +424,7 @@ export default function TripsPage() {
                       <p className="font-semibold">{passenger.passengerName}</p>
                       <p className="text-sm text-muted-foreground">المقعد: {passenger.seatName}</p>
                     </div>
-                    {passenger.passengerPhone && passenger.passengerPhone !== 'غير متوفر' && (
-                       <Button variant="outline" size="sm" asChild>
-                         <a href={`tel:${passenger.passengerPhone}`}>اتصال</a>
-                       </Button>
-                    )}
+                    {/* Call button removed as per request */}
                   </li>
                 ))}
               </ul>
@@ -432,4 +441,3 @@ export default function TripsPage() {
     </div>
   );
 }
-
