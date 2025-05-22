@@ -2,7 +2,7 @@
 "use client";
 
 import type { SeatID } from '@/lib/constants';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -22,7 +22,7 @@ import { JORDAN_GOVERNORATES, SEAT_CONFIG } from '@/lib/constants';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { auth } from '@/lib/firebase';
-import { getTripById, updateTrip, type Trip, addStopsToRoute, type PassengerBookingDetails } from '@/lib/firebaseService';
+import { getTripById, updateTrip, type Trip, addStopsToRoute, type PassengerBookingDetails, getStopStationsForRoute } from '@/lib/firebaseService';
 
 
 const tripSchema = z.object({
@@ -58,20 +58,27 @@ export default function EditTripPage() {
   const [tripToEdit, setTripToEdit] = useState<Trip | null>(null);
   const [minCalendarDate, setMinCalendarDate] = useState<Date | null>(null);
 
+  // State for stop suggestions
+  const [routeSpecificStopSuggestions, setRouteSpecificStopSuggestions] = useState<string[]>([]);
+  const [activeStopInputIndex, setActiveStopInputIndex] = useState<number | null>(null);
+  const [currentStopSearchTerm, setCurrentStopSearchTerm] = useState<string>('');
+
 
   const { control, handleSubmit, register, setValue, watch, reset, formState: { errors } } = useForm<TripFormValues>({
     resolver: zodResolver(tripSchema),
     defaultValues: {
       stops: [],
       offeredSeatsConfig: passengerSeats.reduce((acc, seat) => {
-        acc[seat.id] = false;
+        acc[seat.id as SeatID] = false;
         return acc;
-      }, {} as Record<string, boolean | PassengerBookingDetails>),
+      }, {} as Record<SeatID, boolean | PassengerBookingDetails>),
     },
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: "stops" });
   const offeredSeatsConfigFromForm = watch("offeredSeatsConfig");
+  const watchedStartPoint = watch("startPoint"); // Watch for changes to re-fetch suggestions
+  const watchedDestination = watch("destination"); // Watch for changes to re-fetch suggestions
 
   useEffect(() => {
     const today = new Date();
@@ -106,6 +113,14 @@ export default function EditTripPage() {
             pricePerPassenger: foundTrip.pricePerPassenger,
             notes: foundTrip.notes || '',
           });
+          // Fetch initial stop suggestions for the loaded trip
+          if (foundTrip.startPoint && foundTrip.destination) {
+            const suggestedStops = await getStopStationsForRoute(foundTrip.startPoint, foundTrip.destination);
+            if (suggestedStops) {
+              setRouteSpecificStopSuggestions(suggestedStops.filter(s => s && s.trim() !== ''));
+            }
+          }
+
         } else if (foundTrip && foundTrip.driverId !== currentUser.uid) {
           toast({ title: "ليس لديك صلاحية لتعديل هذه الرحلة", variant: "destructive" });
           router.push('/trips');
@@ -122,11 +137,44 @@ export default function EditTripPage() {
     fetchTrip();
   }, [tripId, reset, router, toast]);
 
+  // Fetch route-specific stops when startPoint or destination changes
+  useEffect(() => {
+    const fetchRouteStops = async () => {
+      if (watchedStartPoint && watchedDestination) {
+        const suggestedStops = await getStopStationsForRoute(watchedStartPoint, watchedDestination);
+        setRouteSpecificStopSuggestions(suggestedStops?.filter(s => s && s.trim() !== '') || []);
+      } else {
+        setRouteSpecificStopSuggestions([]);
+      }
+    };
+    if (!isFetchingTrip) { // Only fetch if initial trip load is done
+        fetchRouteStops();
+    }
+  }, [watchedStartPoint, watchedDestination, isFetchingTrip]);
+
+  const filteredDynamicSuggestions = useMemo(() => {
+    if (!currentStopSearchTerm.trim() || !routeSpecificStopSuggestions || routeSpecificStopSuggestions.length === 0) {
+      return [];
+    }
+    return routeSpecificStopSuggestions.filter(suggestion =>
+      suggestion.toLowerCase().includes(currentStopSearchTerm.toLowerCase())
+    );
+  }, [currentStopSearchTerm, routeSpecificStopSuggestions]);
+
   const onSubmit = async (data: TripFormValues) => {
     if (!tripToEdit || !auth.currentUser || auth.currentUser.uid !== tripToEdit.driverId) {
       toast({ title: "خطأ في الصلاحيات أو بيانات الرحلة", variant: "destructive" });
       return;
     }
+
+    const selectedOfferedSeatsCount = Object.values(data.offeredSeatsConfig)
+                                        .filter(value => value === true || (typeof value === 'object' && value !== null))
+                                        .length;
+    if (selectedOfferedSeatsCount === 0) {
+      toast({ title: "خطأ في الإدخال", description: "يجب اختيار مقعد واحد على الأقل للعرض.", variant: "destructive" });
+      return;
+    }
+
     setIsLoading(true);
     
     const dateTime = new Date(data.tripDate);
@@ -156,20 +204,18 @@ export default function EditTripPage() {
       router.push('/trips');
     } catch (error) {
       console.error("Error updating trip:", error);
-      toast({ title: "خطأ في تعديل الرحلة", variant: "destructive" });
+      toast({ title: "خطأ في تعديل الرحلة", description: (error as Error).message || "يرجى المحاولة مرة أخرى.", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const toggleSeat = (seatId: string) => {
+  const toggleSeat = (seatId: SeatID) => {
     const currentSeatValue = offeredSeatsConfigFromForm[seatId];
-    // If the seat is booked (is an object), it cannot be toggled off by the driver here.
     if (typeof currentSeatValue === 'object' && currentSeatValue !== null) {
       toast({ title: "لا يمكن إلغاء عرض مقعد محجوز", description: "هذا المقعد تم حجزه بالفعل.", variant: "destructive" });
       return;
     }
-    // Toggle between true (offered) and false (not offered)
     setValue(`offeredSeatsConfig.${seatId}`, !currentSeatValue, { shouldValidate: true });
   };
   
@@ -195,7 +241,7 @@ export default function EditTripPage() {
     );
   }
 
-  const tripDateError = errors.tripDate && (errors.tripDate as any).message; // Type assertion for zod Date error
+  const tripDateError = errors.tripDate && (errors.tripDate as any).message;
   
   return (
     <Card className="max-w-2xl mx-auto">
@@ -248,7 +294,7 @@ export default function EditTripPage() {
           <div>
             <Label>محطات التوقف (اختياري)</Label>
             {fields.map((field, index) => (
-              <div key={field.id} className="flex items-center gap-2 mt-2">
+              <div key={field.id} className="flex items-center gap-2 mt-2 relative">
                  <Controller
                     name={`stops.${index}`}
                     control={control}
@@ -258,12 +304,47 @@ export default function EditTripPage() {
                             {...stopField}
                             placeholder={`محطة توقف ${index + 1}`} 
                             className="flex-grow"
+                            onFocus={() => {
+                              setActiveStopInputIndex(index);
+                              setCurrentStopSearchTerm(stopField.value || '');
+                            }}
+                            onChange={(e) => {
+                              stopField.onChange(e); // RHF's onChange
+                              setCurrentStopSearchTerm(e.target.value);
+                              if (activeStopInputIndex !== index) setActiveStopInputIndex(index);
+                            }}
+                            onBlur={() => {
+                              setTimeout(() => {
+                                if (activeStopInputIndex === index) {
+                                   setActiveStopInputIndex(null);
+                                }
+                              }, 150);
+                            }}
                         />
                     )}
                 />
                 <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} aria-label="حذف محطة">
                   <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
+                {/* Suggestions Box */}
+                {activeStopInputIndex === index && filteredDynamicSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-10 mt-1 max-h-40 overflow-y-auto rounded-md border bg-popover shadow-lg">
+                    {filteredDynamicSuggestions.map((suggestion, sIndex) => (
+                      <div
+                        key={sIndex}
+                        className="cursor-pointer p-2 hover:bg-accent hover:text-accent-foreground"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            setValue(`stops.${index}`, suggestion, { shouldValidate: true });
+                            setCurrentStopSearchTerm('');
+                            setActiveStopInputIndex(null);
+                        }}
+                      >
+                        {suggestion}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
              {errors.stops && errors.stops.length > 0 && errors.stops.map((stopError, index) => (
@@ -328,7 +409,7 @@ export default function EditTripPage() {
             <Label>المقاعد المعروضة</Label>
              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 p-4 border rounded-md mt-1">
               {passengerSeats.map(seat => {
-                const seatValue = offeredSeatsConfigFromForm[seat.id];
+                const seatValue = offeredSeatsConfigFromForm[seat.id as SeatID];
                 const isBooked = typeof seatValue === 'object' && seatValue !== null;
                 const isOffered = seatValue === true;
                 
@@ -337,7 +418,7 @@ export default function EditTripPage() {
                       key={seat.id}
                       type="button"
                       variant={isBooked || isOffered ? "default" : "outline"}
-                      onClick={() => toggleSeat(seat.id)}
+                      onClick={() => toggleSeat(seat.id as SeatID)}
                       className={cn("flex flex-col items-center h-auto p-2 text-center", isBooked && "opacity-50 cursor-not-allowed")}
                       aria-pressed={isBooked || isOffered}
                       disabled={isBooked}
@@ -384,5 +465,6 @@ export default function EditTripPage() {
     </Card>
   );
 }
+    
 
     

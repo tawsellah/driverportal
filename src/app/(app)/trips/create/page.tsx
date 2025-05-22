@@ -2,7 +2,7 @@
 "use client";
 
 import type { SeatID } from '@/lib/constants';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -50,14 +50,20 @@ export default function CreateTripPage() {
   const [hasActiveTrip, setHasActiveTrip] = useState(false);
   const [minCalendarDate, setMinCalendarDate] = useState<Date | null>(null);
 
+  // State for stop suggestions
+  const [routeSpecificStopSuggestions, setRouteSpecificStopSuggestions] = useState<string[]>([]);
+  const [activeStopInputIndex, setActiveStopInputIndex] = useState<number | null>(null);
+  const [currentStopSearchTerm, setCurrentStopSearchTerm] = useState<string>('');
+
+
   const { control, handleSubmit, register, setValue, watch, formState: { errors }, getValues, resetField } = useForm<TripFormValues>({
     resolver: zodResolver(tripSchema),
     defaultValues: {
       stops: [],
       offeredSeatsConfig: passengerSeats.reduce((acc, seat) => {
-        acc[seat.id] = false;
+        acc[seat.id as SeatID] = false;
         return acc;
-      }, {} as Record<string, boolean>),
+      }, {} as Record<SeatID, boolean>),
       pricePerPassenger: 0,
     },
   });
@@ -92,21 +98,33 @@ export default function CreateTripPage() {
         const suggestedStops = await getStopStationsForRoute(watchedStartPoint, watchedDestination);
         if (suggestedStops && suggestedStops.length > 0) {
           const validSuggestedStops = suggestedStops.filter(stop => stop && stop.trim() !== '');
+          setRouteSpecificStopSuggestions(validSuggestedStops); // Store for dynamic suggestions
           if (validSuggestedStops.length > 0) {
-            replace(validSuggestedStops.map(stopName => stopName)); // Replace with string values
+            replace(validSuggestedStops.map(stopName => stopName));
             toast({ title: "تم تحميل محطات التوقف المقترحة", description: "يمكنك تعديلها حسب الحاجة." });
           } else {
             replace([]);
           }
         } else {
+          setRouteSpecificStopSuggestions([]);
           replace([]);
         }
       } else {
+         setRouteSpecificStopSuggestions([]);
          replace([]);
       }
     };
     fetchAndSetSuggestedStops();
   }, [watchedStartPoint, watchedDestination, replace, toast]);
+
+  const filteredDynamicSuggestions = useMemo(() => {
+    if (!currentStopSearchTerm.trim() || !routeSpecificStopSuggestions || routeSpecificStopSuggestions.length === 0) {
+      return []; // No search term or no base suggestions, so no dynamic suggestions
+    }
+    return routeSpecificStopSuggestions.filter(suggestion =>
+      suggestion.toLowerCase().includes(currentStopSearchTerm.toLowerCase())
+    );
+  }, [currentStopSearchTerm, routeSpecificStopSuggestions]);
 
 
   const onSubmit = async (data: TripFormValues) => {
@@ -118,6 +136,12 @@ export default function CreateTripPage() {
     if (hasActiveTrip) {
         toast({ title: "لا يمكنك إنشاء رحلة جديدة", description: "لديك رحلة نشطة بالفعل. قم بإنهائها أو إلغائها أولاً.", variant: "destructive" });
         return;
+    }
+
+    const selectedOfferedSeatsCount = Object.values(data.offeredSeatsConfig).filter(isOffered => isOffered).length;
+    if (selectedOfferedSeatsCount === 0) {
+      toast({ title: "خطأ في الإدخال", description: "يجب اختيار مقعد واحد على الأقل لعرضه.", variant: "destructive" });
+      return;
     }
 
     setIsLoading(true);
@@ -147,13 +171,13 @@ export default function CreateTripPage() {
       router.push('/trips');
     } catch (error) {
       console.error("Error creating trip:", error);
-      toast({ title: "خطأ في إنشاء الرحلة", description: "يرجى المحاولة مرة أخرى.", variant: "destructive" });
+      toast({ title: "خطأ في إنشاء الرحلة", description: (error as Error).message || "يرجى المحاولة مرة أخرى.", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const toggleSeat = (seatId: string) => {
+  const toggleSeat = (seatId: SeatID) => {
     const currentStatus = offeredSeatsConfigFromForm[seatId];
     setValue(`offeredSeatsConfig.${seatId}`, !currentStatus, { shouldValidate: true });
   };
@@ -187,7 +211,7 @@ export default function CreateTripPage() {
     );
   }
   
-  const tripDateError = errors.tripDate && (errors.tripDate as any).message; // Type assertion for zod Date error
+  const tripDateError = errors.tripDate && (errors.tripDate as any).message;
 
 
   return (
@@ -241,25 +265,61 @@ export default function CreateTripPage() {
           <div>
             <Label>محطات التوقف (اختياري)</Label>
             {fields.map((field, index) => (
-              <div key={field.id} className="flex items-center gap-2 mt-2">
+              <div key={field.id} className="flex items-center gap-2 mt-2 relative">
                 <Controller
-                    name={`stops.${index}`}
-                    control={control}
-                    defaultValue={field.value || ""} // Use field.value from useFieldArray
-                    render={({ field: stopField }) => (
-                        <Input 
-                            {...stopField}
-                            placeholder={`محطة توقف ${index + 1}`} 
-                            className="flex-grow"
-                        />
-                    )}
+                  name={`stops.${index}`}
+                  control={control}
+                  defaultValue={field.value || ""} 
+                  render={({ field: stopField }) => (
+                    <Input
+                      {...stopField}
+                      placeholder={`محطة توقف ${index + 1}`}
+                      className="flex-grow"
+                      onFocus={() => {
+                        setActiveStopInputIndex(index);
+                        setCurrentStopSearchTerm(stopField.value || '');
+                      }}
+                      onChange={(e) => {
+                        stopField.onChange(e); // RHF's onChange
+                        setCurrentStopSearchTerm(e.target.value);
+                        if (activeStopInputIndex !== index) setActiveStopInputIndex(index);
+                      }}
+                      onBlur={() => {
+                        // Delay hiding suggestions to allow click
+                        setTimeout(() => {
+                          if (activeStopInputIndex === index) { // only blur if it's still the active one
+                             setActiveStopInputIndex(null);
+                          }
+                        }, 150);
+                      }}
+                    />
+                  )}
                 />
                 <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} aria-label="حذف محطة">
                   <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
+                {/* Suggestions Box */}
+                {activeStopInputIndex === index && filteredDynamicSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-10 mt-1 max-h-40 overflow-y-auto rounded-md border bg-popover shadow-lg">
+                    {filteredDynamicSuggestions.map((suggestion, sIndex) => (
+                      <div
+                        key={sIndex}
+                        className="cursor-pointer p-2 hover:bg-accent hover:text-accent-foreground"
+                        onMouseDown={(e) => { // Use onMouseDown to prevent onBlur from firing first
+                            e.preventDefault();
+                            setValue(`stops.${index}`, suggestion, { shouldValidate: true });
+                            setCurrentStopSearchTerm('');
+                            setActiveStopInputIndex(null);
+                        }}
+                      >
+                        {suggestion}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
-            {errors.stops && errors.stops.map((stopError, index) => (
+            {errors.stops && errors.stops.length > 0 && errors.stops.map((stopError, index) => (
                 stopError && <p key={`stop-error-${index}`} className="mt-1 text-sm text-destructive">{stopError.message}</p>
             ))}
             <Button type="button" variant="outline" size="sm" onClick={() => append("")} className="mt-2">
@@ -323,10 +383,10 @@ export default function CreateTripPage() {
                 <Button
                   key={seat.id}
                   type="button"
-                  variant={offeredSeatsConfigFromForm[seat.id] ? "default" : "outline"}
-                  onClick={() => toggleSeat(seat.id)}
+                  variant={offeredSeatsConfigFromForm[seat.id as SeatID] ? "default" : "outline"}
+                  onClick={() => toggleSeat(seat.id as SeatID)}
                   className="flex flex-col items-center h-auto p-2 text-center"
-                  aria-pressed={offeredSeatsConfigFromForm[seat.id]}
+                  aria-pressed={offeredSeatsConfigFromForm[seat.id as SeatID]}
                 >
                   <Armchair className="h-6 w-6 mb-1"/>
                   <span className="text-xs">{seat.name}</span>
@@ -337,7 +397,7 @@ export default function CreateTripPage() {
             <p className="mt-1 text-sm text-muted-foreground">
               عدد المقاعد المتاحة: {offeredSeatsCount || 0}
             </p>
-             {offeredSeatsCount === 0 && !errors.offeredSeatsConfig && <p className="mt-1 text-sm text-destructive">يجب اختيار مقعد واحد على الأقل</p>}
+             {offeredSeatsCount === 0 && <p className="mt-1 text-sm text-destructive">يجب اختيار مقعد واحد على الأقل</p>}
           </div>
 
           {/* Meeting Point and Price */}
@@ -368,5 +428,6 @@ export default function CreateTripPage() {
     </Card>
   );
 }
+    
 
     
