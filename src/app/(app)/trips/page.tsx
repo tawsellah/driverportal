@@ -30,8 +30,7 @@ import {
     type Trip, 
     getActiveTripForDriver, 
     onAuthUserChangedListener,
-    getUserProfile, // Import getUserProfile
-    type PassengerBookingDetails // Import PassengerBookingDetails
+    type PassengerBookingDetails 
 } from '@/lib/firebaseService';
 import { useRouter } from 'next/navigation';
 
@@ -293,59 +292,50 @@ export default function TripsPage() {
   const showPassengerDetails = async (trip: Trip) => {
     if (!trip || !trip.offeredSeatsConfig) {
       setPassengerDetailsList([]);
-      setIsPassengerDialogOpen(true);
       setCurrentTripForPassengers(trip);
-      setIsLoadingPassengerDetails(false); // Ensure loader stops if no config
+      setIsLoadingPassengerDetails(false);
+      setIsPassengerDialogOpen(true);
       return;
     }
 
     setCurrentTripForPassengers(trip);
     setIsLoadingPassengerDetails(true);
+    setPassengerDetailsList([]);
     setIsPassengerDialogOpen(true);
-    setPassengerDetailsList([]); 
 
-    const passengerPromises = Object.entries(trip.offeredSeatsConfig)
-      .filter(([_, seatValue]) => typeof seatValue === 'object' && seatValue !== null && 'userId' in seatValue)
-      .map(async ([seatId, bookingDetails]) => {
-        const typedBookingDetails = bookingDetails as PassengerBookingDetails;
+    const resolvedPassengers: DisplayPassengerDetails[] = [];
+
+    for (const seatId in trip.offeredSeatsConfig) {
+      const bookingInfo = trip.offeredSeatsConfig[seatId];
+      if (typeof bookingInfo === 'object' && bookingInfo !== null) {
+        // This is a booked seat with PassengerBookingDetails
         const seatName = SEAT_CONFIG[seatId as SeatID]?.name || seatId.replace(/_/g, ' ');
+        const passengerBooking = bookingInfo as PassengerBookingDetails;
         
-        let passengerName = 'بيانات الراكب غير متوفرة'; 
+        let passengerName = passengerBooking.fullName || 'اسم الراكب غير متوفر';
+        // If fullName is not directly in bookingInfo, and you need to fetch it:
+        // if (!passengerBooking.fullName && passengerBooking.userId) {
+        //   try {
+        //     const profile = await getUserProfile(passengerBooking.userId); // Assuming getUserProfile exists
+        //     passengerName = profile?.fullName || 'راكب غير معروف';
+        //   } catch (error) {
+        //     console.error(`Error fetching profile for userId ${passengerBooking.userId}:`, error);
+        //     passengerName = 'خطأ في تحميل اسم الراكب';
+        //   }
+        // } else if (!passengerBooking.fullName) {
+        //     passengerName = 'بيانات الراكب غير كاملة';
+        // }
 
-        if (typedBookingDetails.userId) {
-          try {
-            const profile = await getUserProfile(typedBookingDetails.userId);
-            if (profile && profile.fullName && profile.fullName.trim() !== '') {
-              passengerName = profile.fullName;
-            } else if (profile) {
-              passengerName = 'اسم الراكب غير مسجل';
-            } else {
-              passengerName = 'بيانات الراكب غير متوفرة';
-            }
-          } catch (error) {
-            console.error(`Error fetching profile for userId ${typedBookingDetails.userId}:`, error);
-            passengerName = 'خطأ في تحميل اسم الراكب';
-          }
-        } else {
-          passengerName = 'معرّف الراكب مفقود';
-        }
-
-        return {
+        resolvedPassengers.push({
           seatId,
           seatName,
-          passengerName,
-          passengerPhone: typedBookingDetails.phone || 'غير متوفر',
-        };
-      });
-
-    try {
-      const resolvedPassengers = await Promise.all(passengerPromises);
-      setPassengerDetailsList(resolvedPassengers);
-    } catch (error) {
-      console.error("Error resolving passenger details:", error);
-    } finally {
-      setIsLoadingPassengerDetails(false);
+          passengerName: passengerName,
+          passengerPhone: passengerBooking.phone || 'غير متوفر',
+        });
+      }
     }
+    setPassengerDetailsList(resolvedPassengers);
+    setIsLoadingPassengerDetails(false);
   };
 
 
@@ -442,3 +432,4 @@ export default function TripsPage() {
     </div>
   );
 }
+
