@@ -198,7 +198,7 @@ export default function SignUpPage() {
                   {errors.fullName && <p className="mt-1 text-sm text-destructive">{errors.fullName.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="phone">رقم الهاتف (سيستخدم للدخول مع t في البداية) <span className="text-destructive">*</span></Label>
+                  <Label htmlFor="phone">رقم الهاتف <span className="text-destructive">*</span></Label>
                   <IconInput icon={Phone} id="phone" type="tel" {...register('phone')} error={errors.phone?.message} />
                   {errors.phone && <p className="mt-1 text-sm text-destructive">{errors.phone.message}</p>}
                 </div>
@@ -307,3 +307,6 @@ export default function SignUpPage() {
     </div>
   );
 }
+
+
+    
