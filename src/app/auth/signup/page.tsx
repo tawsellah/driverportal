@@ -28,16 +28,16 @@ const signUpSchema = z.object({
   phone: z.string().regex(/^07[789]\d{7}$/, { message: "رقم هاتف أردني غير صالح (مثال: 0791234567)." }),
   password: z.string().min(6, { message: "كلمة المرور يجب أن تكون 6 أحرف على الأقل." }),
   idNumber: z.string().min(10, { message: "رقم الهوية مطلوب." }).max(10, { message: "رقم الهوية يجب أن يكون 10 أرقام." }),
-  idPhoto: z.instanceof(FileList).optional().nullable(), 
+  idPhoto: z.instanceof(FileList).refine(files => files && files.length > 0, { message: "صورة الهوية مطلوبة." }), 
   licenseNumber: z.string().min(1, { message: "رقم الرخصة مطلوب." }),
   licenseExpiry: z.string().min(1, { message: "تاريخ انتهاء الرخصة مطلوب." }),
-  licensePhoto: z.instanceof(FileList).optional().nullable(), 
+  licensePhoto: z.instanceof(FileList).refine(files => files && files.length > 0, { message: "صورة الرخصة مطلوبة." }), 
   vehicleType: z.string().min(1, { message: "نوع المركبة مطلوب." }),
   makeModel: z.string().min(1, { message: "الصنع والموديل مطلوب." }),
   year: z.string().min(4, { message: "سنة الصنع مطلوبة (مثال: 2020)." }).max(4),
   color: z.string().min(1, { message: "لون المركبة مطلوب." }),
   plateNumber: z.string().min(1, { message: "رقم اللوحة مطلوب." }),
-  vehiclePhoto: z.instanceof(FileList).optional().nullable(), 
+  vehiclePhoto: z.instanceof(FileList).refine(files => files && files.length > 0, { message: "صورة المركبة مطلوبة." }), 
 });
 
 type SignUpFormValues = z.infer<typeof signUpSchema>;
@@ -78,14 +78,15 @@ async function uploadFileToImageKitHelper(file: File | undefined | null): Promis
 }
 
 const FileInput = ({ 
-  label, id, error, register, fieldName 
+  label, id, error, register, fieldName, isRequired = false
 }: { 
   label: string, id: string, error?: string, 
   register: any, // Use "any" for register type in this context
-  fieldName: keyof SignUpFormValues 
+  fieldName: keyof SignUpFormValues,
+  isRequired?: boolean
 }) => (
   <div>
-    <Label htmlFor={id}>{label} <span className="text-muted-foreground">(اختياري)</span></Label>
+    <Label htmlFor={id}>{label} {isRequired && <span className="text-destructive">*</span>}</Label>
     <Input id={id} type="file" accept="image/*" className={error ? 'border-destructive' : ''} {...register(fieldName)} />
     {error && <p className="mt-1 text-sm text-destructive">{error}</p>}
     <p className="mt-1 text-xs text-muted-foreground">سيتم رفع الصورة إلى ImageKit عند إنشاء الحساب.</p>
@@ -220,7 +221,7 @@ export default function SignUpPage() {
                   <IconInput icon={CreditCard} id="idNumber" {...register('idNumber')} error={errors.idNumber?.message} />
                   {errors.idNumber && <p className="mt-1 text-sm text-destructive">{errors.idNumber.message}</p>}
                 </div>
-                <FileInput label="صورة الهوية" id="idPhoto" error={errors.idPhoto?.message as string} register={register} fieldName="idPhoto" />
+                <FileInput label="صورة الهوية" id="idPhoto" error={errors.idPhoto?.message as string} register={register} fieldName="idPhoto" isRequired={true} />
                 <div>
                   <Label htmlFor="licenseNumber">رقم الرخصة <span className="text-destructive">*</span></Label>
                   <IconInput icon={CreditCard} id="licenseNumber" {...register('licenseNumber')} error={errors.licenseNumber?.message} />
@@ -231,7 +232,7 @@ export default function SignUpPage() {
                   <IconInput icon={CalendarDays} id="licenseExpiry" type="date" {...register('licenseExpiry')} error={errors.licenseExpiry?.message} />
                   {errors.licenseExpiry && <p className="mt-1 text-sm text-destructive">{errors.licenseExpiry.message}</p>}
                 </div>
-                <FileInput label="صورة الرخصة" id="licensePhoto" error={errors.licensePhoto?.message as string} register={register} fieldName="licensePhoto"/>
+                <FileInput label="صورة الرخصة" id="licensePhoto" error={errors.licensePhoto?.message as string} register={register} fieldName="licensePhoto" isRequired={true}/>
               </AccordionContent>
             </AccordionItem>
 
@@ -281,7 +282,7 @@ export default function SignUpPage() {
                   <IconInput icon={Hash} id="plateNumber" {...register('plateNumber')} error={errors.plateNumber?.message} />
                   {errors.plateNumber && <p className="mt-1 text-sm text-destructive">{errors.plateNumber.message}</p>}
                 </div>
-                <FileInput label="صورة المركبة" id="vehiclePhoto" error={errors.vehiclePhoto?.message as string} register={register} fieldName="vehiclePhoto" />
+                <FileInput label="صورة المركبة" id="vehiclePhoto" error={errors.vehiclePhoto?.message as string} register={register} fieldName="vehiclePhoto" isRequired={true} />
               </AccordionContent>
             </AccordionItem>
           </Accordion>
@@ -307,6 +308,4 @@ export default function SignUpPage() {
     </div>
   );
 }
-
-
     
