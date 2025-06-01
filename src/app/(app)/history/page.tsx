@@ -8,7 +8,7 @@ import { AlertTriangle, Briefcase, CalendarDays, Clock, DollarSign, Download, Fi
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { JORDAN_GOVERNORATES, SEAT_CONFIG } from '@/lib/constants';
+import { JORDAN_GOVERNORATES, SEAT_CONFIG, type SeatID } from '@/lib/constants';
 import { auth, onAuthUserChangedListener, getCompletedTripsForDriver, type Trip } from '@/lib/firebaseService';
 import { useRouter } from 'next/navigation';
 
@@ -19,7 +19,17 @@ function CompletedTripCard({ trip }: { trip: Trip }) {
   const destinationName = JORDAN_GOVERNORATES.find(g => g.id === trip.destination)?.name || trip.destination;
   const stopNames = trip.stops?.map(s => JORDAN_GOVERNORATES.find(g => g.id === s)?.name || s).join('، ');
 
-  const totalOfferedSeats = Object.values(trip.offeredSeatsConfig || {}).filter(isOffered => isOffered).length;
+  const bookedSeatsCount = trip.offeredSeatsConfig
+    ? Object.values(trip.offeredSeatsConfig).filter(
+        seatValue => typeof seatValue === 'object' && seatValue !== null
+      ).length
+    : 0;
+
+  const totalOfferedSeats = trip.offeredSeatsConfig
+    ? Object.values(trip.offeredSeatsConfig).filter(
+        seatValue => seatValue === true || (typeof seatValue === 'object' && seatValue !== null)
+      ).length
+    : 0;
 
 
   const ArrowLeftShort = ({ className }: { className?: string }) => (
@@ -50,12 +60,17 @@ function CompletedTripCard({ trip }: { trip: Trip }) {
         </div>
         <div className="flex items-center">
           <Users className="ms-2 h-4 w-4 text-muted-foreground" />
-          عدد الركاب: {trip.selectedSeats.length} / {totalOfferedSeats}
+          عدد الركاب: {bookedSeatsCount} / {totalOfferedSeats}
         </div>
-         {trip.selectedSeats && trip.selectedSeats.length > 0 && (
+         {bookedSeatsCount > 0 && (
           <div className="flex items-center">
             <Armchair className="ms-2 h-4 w-4 text-muted-foreground" />
-            المقاعد المحجوزة: {trip.selectedSeats.map(s => SEAT_CONFIG[s]?.name || s.replace(/_/g, ' ')).join('، ')}
+            المقاعد المحجوزة: {
+              Object.entries(trip.offeredSeatsConfig || {})
+                .filter(([_, seatValue]) => typeof seatValue === 'object' && seatValue !== null)
+                .map(([seatId, _]) => SEAT_CONFIG[seatId as SeatID]?.name || seatId.replace(/_/g, ' '))
+                .join('، ')
+            }
           </div>
         )}
         <div className="flex items-center">
@@ -110,7 +125,7 @@ export default function HistoryPage() {
   }, [router]);
 
   const totalEarnings = completedTrips
-    .filter(trip => trip.status === 'completed')
+    .filter(trip => trip.status === 'completed' && trip.earnings !== undefined)
     .reduce((sum, trip) => sum + (trip.earnings || 0), 0);
 
   if (isLoading) {
