@@ -31,7 +31,6 @@ export interface UserProfile {
   licenseExpiry?: string;
   licensePhotoUrl?: string | null; 
   vehicleType?: string;
-  vehicleMakeModel?: string;
   vehicleYear?: string;
   vehicleColor?: string;
   vehiclePlateNumber?: string;
@@ -77,7 +76,7 @@ export const onAuthUserChangedListener = (callback: (user: FirebaseAuthUser | nu
 
 
 // --- User Profile Service ---
-export const saveUserProfile = async (userId: string, profileData: Omit<UserProfile, 'id' | 'createdAt'>): Promise<void> => {
+export const saveUserProfile = async (userId: string, profileData: Omit<UserProfile, 'id' | 'createdAt' | 'vehicleMakeModel'>): Promise<void> => {
   const userRef = ref(databaseInternal, `users/${userId}`);
   const fullProfileData: UserProfile = {
     id: userId,
@@ -135,7 +134,7 @@ export const deleteTrip = async (tripId: string): Promise<void> => {
     const tripToEnd = snapshot.val() as Trip;
      if (tripToEnd.status === 'upcoming' || tripToEnd.status === 'ongoing') {
       const updates: Partial<Trip> = { status: 'cancelled', updatedAt: serverTimestamp() };
-      await update(tripRef, updates);
+      
 
       // Move to finishedTrips
       const finishedTripData: Trip = {
@@ -144,7 +143,7 @@ export const deleteTrip = async (tripId: string): Promise<void> => {
       };
       const finishedTripRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${tripToEnd.driverId}/${tripToEnd.id}`);
       await set(finishedTripRef, finishedTripData);
-      await remove(originalTripRef); // Remove from currentTrips
+      await remove(tripRef); // Remove from currentTrips
     }
   }
 };
@@ -156,8 +155,6 @@ export const getTripById = async (tripId: string): Promise<Trip | null> => {
         return snapshot.val() as Trip;
     }
     // Also check finishedTrips if not found in currentTrips (e.g., for history page access)
-    // This might need a driverId if finishedTrips are keyed by driverId first
-    // For simplicity, assuming tripId is unique across both for now, or adjust as needed
     const finishedTripsSnapshot = await get(ref(databaseInternal, FINISHED_TRIPS_PATH));
     if(finishedTripsSnapshot.exists()){
         let foundTrip: Trip | null = null;
@@ -219,17 +216,6 @@ export const getCompletedTripsForDriver = async (driverId: string): Promise<Trip
   if (snapshot.exists()) {
     snapshot.forEach((childSnapshot) => {
       trips.push(childSnapshot.val() as Trip);
-    });
-  }
-  // Also include cancelled trips from currentTrips if they are not moved by deleteTrip logic
-  const currentTripsSnapshot = await get(ref(databaseInternal, CURRENT_TRIPS_PATH));
-  if (currentTripsSnapshot.exists()) {
-    currentTripsSnapshot.forEach((childSnapshot) => {
-      const trip = childSnapshot.val() as Trip;
-      if (trip.driverId === driverId && trip.status === 'cancelled' && !trips.some(t => t.id === trip.id)) {
-         // This logic assumes cancelled trips might not be in finishedTrips if not explicitly moved.
-         // The improved deleteTrip should move them.
-      }
     });
   }
   return trips.sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());

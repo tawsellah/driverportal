@@ -284,10 +284,6 @@ export default function ProfilePage() {
                 <Input id="vehicleType" value={vehicleTypeName} disabled />
               </div>
               <div>
-                <Label htmlFor="vehicleMakeModel">الصنع والموديل</Label>
-                <Input id="vehicleMakeModel" value={userProfile.vehicleMakeModel || 'غير محدد'} disabled />
-              </div>
-              <div>
                 <Label htmlFor="vehicleYear">سنة الصنع</Label>
                 <Input id="vehicleYear" value={userProfile.vehicleYear || 'غير محدد'} disabled />
               </div>

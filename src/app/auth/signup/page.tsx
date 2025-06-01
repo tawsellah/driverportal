@@ -33,7 +33,6 @@ const signUpSchema = z.object({
   licenseExpiry: z.string().min(1, { message: "تاريخ انتهاء الرخصة مطلوب." }),
   licensePhoto: z.instanceof(FileList).refine(files => files && files.length > 0, { message: "صورة الرخصة مطلوبة." }), 
   vehicleType: z.string().min(1, { message: "نوع المركبة مطلوب." }),
-  makeModel: z.string().min(1, { message: "الصنع والموديل مطلوب." }),
   year: z.string().min(4, { message: "سنة الصنع مطلوبة (مثال: 2020)." }).max(4),
   color: z.string().min(1, { message: "لون المركبة مطلوب." }),
   plateNumber: z.string().min(1, { message: "رقم اللوحة مطلوب." }),
@@ -129,7 +128,7 @@ export default function SignUpPage() {
         const vehiclePhotoUrl = data.vehiclePhoto && data.vehiclePhoto.length > 0 ? await uploadFileToImageKitHelper(data.vehiclePhoto[0]) : null;
         
         // 3. Prepare profile data for Firebase RTDB
-        const profileData: Omit<UserProfile, 'id' | 'createdAt'> = {
+        const profileData: Omit<UserProfile, 'id' | 'createdAt' | 'vehicleMakeModel'> = {
           fullName: data.fullName,
           email: constructedEmail,
           phone: data.phone,
@@ -139,7 +138,6 @@ export default function SignUpPage() {
           licenseExpiry: data.licenseExpiry,
           licensePhotoUrl: licensePhotoUrl,
           vehicleType: data.vehicleType,
-          vehicleMakeModel: data.makeModel,
           vehicleYear: data.year,
           vehicleColor: data.color,
           vehiclePlateNumber: data.plateNumber,
@@ -261,11 +259,6 @@ export default function SignUpPage() {
                       )}
                     />
                   {errors.vehicleType && <p className="mt-1 text-sm text-destructive">{errors.vehicleType.message}</p>}
-                </div>
-                <div>
-                  <Label htmlFor="makeModel">الصنع والموديل <span className="text-destructive">*</span></Label>
-                  <IconInput icon={Car} id="makeModel" {...register('makeModel')} error={errors.makeModel?.message} />
-                  {errors.makeModel && <p className="mt-1 text-sm text-destructive">{errors.makeModel.message}</p>}
                 </div>
                 <div>
                   <Label htmlFor="year">سنة الصنع <span className="text-destructive">*</span></Label>
