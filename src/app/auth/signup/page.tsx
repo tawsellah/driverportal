@@ -140,7 +140,7 @@ export default function SignUpPage() {
           vehicleYear: data.year,
           vehicleColor: data.color,
           vehiclePlateNumber: data.plateNumber,
-          vehiclePhotosUrl: vehiclePhotoUrl, // Assuming vehiclePhotosUrl maps to vehiclePhoto for now
+          vehiclePhotosUrl: vehiclePhotoUrl, 
           rating: 0,
           tripsCount: 0,
           paymentMethods: { cash: true, click: false },
@@ -215,7 +215,7 @@ export default function SignUpPage() {
               <AccordionContent className="space-y-4 pt-4">
                 <div>
                   <Label htmlFor="idNumber">رقم الهوية <span className="text-destructive">*</span></Label>
-                  <IconInput icon={CreditCard} id="idNumber" {...register('idNumber')} error={errors.idNumber?.message} />
+                  <IconInput icon={CreditCard} id="idNumber" {...register('idNumber')} error={errors.idNumber?.message} maxLength={8} />
                   {errors.idNumber && <p className="mt-1 text-sm text-destructive">{errors.idNumber.message}</p>}
                 </div>
                 <FileInput label="صورة الهوية" id="idPhoto" error={errors.idPhoto?.message as string} register={register} fieldName="idPhoto" isRequired={true} />
@@ -301,3 +301,4 @@ export default function SignUpPage() {
   );
 }
     
+
