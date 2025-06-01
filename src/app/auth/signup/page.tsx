@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { UserPlus, ArrowLeft, User, Phone, Lock, CreditCard, Car, Image as ImageIcon, CalendarDays, Palette, Hash, Loader2 } from 'lucide-react';
+import { UserPlus, ArrowLeft, User, Phone, Lock, CreditCard, Car, ImageIcon, CalendarDays, Palette, Hash, Loader2 } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { IconInput as OriginalIconInputComponent } from '@/components/shared/icon-input';
@@ -20,23 +20,23 @@ import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { auth } from '@/lib/firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { saveUserProfile, type UserProfile } from '@/lib/firebaseService'; 
+import { saveUserProfile, type UserProfile } from '@/lib/firebaseService';
 import { setAuthStatus } from '@/lib/storage';
 
 const signUpSchema = z.object({
   fullName: z.string().min(3, { message: "الاسم الكامل مطلوب." }),
   phone: z.string().regex(/^07[789]\d{7}$/, { message: "رقم هاتف أردني غير صالح (مثال: 0791234567)." }),
   password: z.string().min(6, { message: "كلمة المرور يجب أن تكون 6 أحرف على الأقل." }),
-  idNumber: z.string().min(10, { message: "رقم الهوية مطلوب." }).max(10, { message: "رقم الهوية يجب أن يكون 10 أرقام." }),
-  idPhoto: z.instanceof(FileList).refine(files => files && files.length > 0, { message: "صورة الهوية مطلوبة." }), 
+  idNumber: z.string().regex(/^[A-Z0-9]{8}$/, { message: "رقم الهوية يجب أن يتكون من 8 أحرف إنجليزية كبيرة وأرقام." }),
+  idPhoto: z.instanceof(FileList).refine(files => files && files.length > 0, { message: "صورة الهوية مطلوبة." }),
   licenseNumber: z.string().min(1, { message: "رقم الرخصة مطلوب." }),
   licenseExpiry: z.string().min(1, { message: "تاريخ انتهاء الرخصة مطلوب." }),
-  licensePhoto: z.instanceof(FileList).refine(files => files && files.length > 0, { message: "صورة الرخصة مطلوبة." }), 
+  licensePhoto: z.instanceof(FileList).refine(files => files && files.length > 0, { message: "صورة الرخصة مطلوبة." }),
   vehicleType: z.string().min(1, { message: "نوع المركبة مطلوب." }),
   year: z.string().min(4, { message: "سنة الصنع مطلوبة (مثال: 2020)." }).max(4),
   color: z.string().min(1, { message: "لون المركبة مطلوب." }),
   plateNumber: z.string().min(1, { message: "رقم اللوحة مطلوب." }),
-  vehiclePhoto: z.instanceof(FileList).refine(files => files && files.length > 0, { message: "صورة المركبة مطلوبة." }), 
+  vehiclePhoto: z.instanceof(FileList).refine(files => files && files.length > 0, { message: "صورة المركبة مطلوبة." }),
 });
 
 type SignUpFormValues = z.infer<typeof signUpSchema>;
@@ -76,10 +76,10 @@ async function uploadFileToImageKitHelper(file: File | undefined | null): Promis
   }
 }
 
-const FileInput = ({ 
+const FileInput = ({
   label, id, error, register, fieldName, isRequired = false
-}: { 
-  label: string, id: string, error?: string, 
+}: {
+  label: string, id: string, error?: string,
   register: any, // Use "any" for register type in this context
   fieldName: keyof SignUpFormValues,
   isRequired?: boolean
@@ -125,7 +125,7 @@ export default function SignUpPage() {
         const idPhotoUrl = data.idPhoto && data.idPhoto.length > 0 ? await uploadFileToImageKitHelper(data.idPhoto[0]) : null;
         const licensePhotoUrl = data.licensePhoto && data.licensePhoto.length > 0 ? await uploadFileToImageKitHelper(data.licensePhoto[0]) : null;
         const vehiclePhotoUrl = data.vehiclePhoto && data.vehiclePhoto.length > 0 ? await uploadFileToImageKitHelper(data.vehiclePhoto[0]) : null;
-        
+
         // 3. Prepare profile data for Firebase RTDB
         const profileData: Omit<UserProfile, 'id' | 'createdAt'> = {
           fullName: data.fullName,
@@ -141,14 +141,14 @@ export default function SignUpPage() {
           vehicleColor: data.color,
           vehiclePlateNumber: data.plateNumber,
           vehiclePhotosUrl: vehiclePhotoUrl, // Assuming vehiclePhotosUrl maps to vehiclePhoto for now
-          rating: 0, 
-          tripsCount: 0, 
-          paymentMethods: { cash: true, click: false }, 
+          rating: 0,
+          tripsCount: 0,
+          paymentMethods: { cash: true, click: false },
         };
 
         // 4. Save profile to Firebase RTDB
         await saveUserProfile(user.uid, profileData);
-        setAuthStatus(true); 
+        setAuthStatus(true);
 
         toast({
           title: "تم إنشاء الحساب بنجاح!",
@@ -176,7 +176,7 @@ export default function SignUpPage() {
           <div className="space-y-4">
             {[...Array(3)].map((_, i) => (
               <div key={i}>
-                <Skeleton className="h-8 w-1/3 mb-2" /> 
+                <Skeleton className="h-8 w-1/3 mb-2" />
                 <Skeleton className="h-10 w-full" />
               </div>
             ))}
@@ -301,4 +301,3 @@ export default function SignUpPage() {
   );
 }
     
-
