@@ -29,7 +29,7 @@ const signUpSchema = z.object({
   password: z.string().min(6, { message: "كلمة المرور يجب أن تكون 6 أحرف على الأقل." }),
   idNumber: z.string().regex(/^[A-Z0-9]{8}$/, { message: "رقم الهوية يجب أن يتكون من 8 أحرف إنجليزية كبيرة وأرقام." }),
   idPhoto: z.instanceof(FileList).refine(files => files && files.length > 0, { message: "صورة الهوية مطلوبة." }),
-  licenseNumber: z.string().min(1, { message: "رقم الرخصة مطلوب." }),
+  licenseNumber: z.string().regex(/^[0-9]{8}$/, { message: "رقم الرخصة يجب أن يتكون من 8 أرقام." }),
   licenseExpiry: z.string().min(1, { message: "تاريخ انتهاء الرخصة مطلوب." }),
   licensePhoto: z.instanceof(FileList).refine(files => files && files.length > 0, { message: "صورة الرخصة مطلوبة." }),
   vehicleType: z.string().min(1, { message: "نوع المركبة مطلوب." }),
@@ -221,7 +221,7 @@ export default function SignUpPage() {
                 <FileInput label="صورة الهوية" id="idPhoto" error={errors.idPhoto?.message as string} register={register} fieldName="idPhoto" isRequired={true} />
                 <div>
                   <Label htmlFor="licenseNumber">رقم الرخصة <span className="text-destructive">*</span></Label>
-                  <IconInput icon={CreditCard} id="licenseNumber" {...register('licenseNumber')} error={errors.licenseNumber?.message} />
+                  <IconInput icon={CreditCard} id="licenseNumber" {...register('licenseNumber')} error={errors.licenseNumber?.message} maxLength={8} />
                   {errors.licenseNumber && <p className="mt-1 text-sm text-destructive">{errors.licenseNumber.message}</p>}
                 </div>
                 <div>
@@ -301,4 +301,3 @@ export default function SignUpPage() {
   );
 }
     
-
