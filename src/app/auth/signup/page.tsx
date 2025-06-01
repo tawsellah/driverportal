@@ -88,7 +88,6 @@ const FileInput = ({
     <Label htmlFor={id}>{label} {isRequired && <span className="text-destructive">*</span>}</Label>
     <Input id={id} type="file" accept="image/*" className={error ? 'border-destructive' : ''} {...register(fieldName)} />
     {error && <p className="mt-1 text-sm text-destructive">{error}</p>}
-    <p className="mt-1 text-xs text-muted-foreground">سيتم رفع الصورة إلى ImageKit عند إنشاء الحساب.</p>
   </div>
 );
 
@@ -128,7 +127,7 @@ export default function SignUpPage() {
         const vehiclePhotoUrl = data.vehiclePhoto && data.vehiclePhoto.length > 0 ? await uploadFileToImageKitHelper(data.vehiclePhoto[0]) : null;
         
         // 3. Prepare profile data for Firebase RTDB
-        const profileData: Omit<UserProfile, 'id' | 'createdAt' | 'vehicleMakeModel'> = {
+        const profileData: Omit<UserProfile, 'id' | 'createdAt'> = {
           fullName: data.fullName,
           email: constructedEmail,
           phone: data.phone,
@@ -302,3 +301,4 @@ export default function SignUpPage() {
   );
 }
     
+
