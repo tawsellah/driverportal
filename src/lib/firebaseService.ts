@@ -16,7 +16,7 @@ export const database = databaseInternal;
 export interface PassengerBookingDetails {
   userId: string;
   phone: string;
-  fullName: string; // Passenger's full name is now directly in booking details
+  fullName: string; 
   bookedAt: any; 
 }
 
@@ -109,9 +109,9 @@ export const updateUserProfile = async (userId: string, updates: Partial<UserPro
 
 // --- Wallet Service (Charge Code Logic) ---
 interface ChargeCode {
-  value: number; // The monetary value of the code
-  usesLeft: number; // How many times this code can be used
-  isActive: boolean; // Whether the code is generally active
+  value: number; 
+  usesLeft: number; 
+  isActive: boolean; 
 }
 
 export const chargeWalletWithCode = async (
@@ -123,38 +123,28 @@ export const chargeWalletWithCode = async (
   }
 
   const userProfileRef = ref(databaseInternal, `users/${userId}`);
-  const chargeCodeRef = ref(databaseInternal, `admin_charge_codes/${chargeCodeInput}`);
+  const chargeCodeRef = ref(databaseInternal, `admin_charge_codes/${chargeCodeInput.trim()}`);
 
   try {
-    // Step 1: Perform a transaction on the charge code to ensure atomic "usage"
     const transactionResult = await runTransaction(chargeCodeRef, (currentCodeData: ChargeCode | null) => {
       if (currentCodeData === null) {
-        // Code does not exist in admin_charge_codes
-        return; // Abort transaction, indicating code is invalid
+        return; 
       }
       if (!currentCodeData.isActive || currentCodeData.usesLeft <= 0) {
-        // Code is not active or has no uses left
-        return; // Abort transaction, indicating code is invalid
+        return; 
       }
       
-      // If valid, "use" the code by decrementing usesLeft and updating isActive
       currentCodeData.usesLeft -= 1;
       currentCodeData.isActive = currentCodeData.usesLeft > 0;
-      return currentCodeData; // Return the modified data to commit the transaction
+      return currentCodeData; 
     });
 
-    // Step 2: Process the outcome of the transaction
     if (transactionResult.committed && transactionResult.snapshot.exists()) {
-      // The transaction was successful, and the charge code was "spent" (or its uses decremented).
       const usedCodeData = transactionResult.snapshot.val() as ChargeCode;
-      const chargeAmount = usedCodeData.value; // The monetary value of the code
+      const chargeAmount = usedCodeData.value; 
 
-      // Now, fetch the user's current profile to update their wallet balance.
       const userProfileSnapshot = await get(userProfileRef);
       if (!userProfileSnapshot.exists()) {
-        // This is an unlikely scenario if userId is correct, but a critical safeguard.
-        // If the user profile doesn't exist, we can't update the balance.
-        // The charge code has already been "spent". This situation might require manual intervention or more complex rollback logic (ideally via Cloud Functions).
         console.error(`User profile for userId ${userId} not found after successfully committing charge code ${chargeCodeInput}. Code usage was recorded.`);
         return { 
           success: false, 
@@ -174,23 +164,22 @@ export const chargeWalletWithCode = async (
         newBalance: newBalance,
       };
     } else {
-      // The transaction was aborted. This means the code was invalid (e.g., didn't exist, was inactive, or had no uses left at the time of the transaction).
-      // For a more specific message, we can re-fetch the current state of the code (optional, as the transaction already determined invalidity).
       const currentCodeSnapshot = await get(chargeCodeRef);
       if (!currentCodeSnapshot.exists()) {
-        return { success: false, message: "كود الشحن غير صالح أو غير موجود." };
+        return { success: false, message: "كود الشحن المدخل غير صالح." };
       }
-      const codeData = currentCodeSnapshot.val() as ChargeCode; // Check its state
-      if (!codeData.isActive || codeData.usesLeft <= 0) {
-        return { success: false, message: "كود الشحن غير فعال أو تم استخدامه بالكامل." };
+      const codeData = currentCodeSnapshot.val() as ChargeCode; 
+      if (codeData.usesLeft <= 0) {
+        return { success: false, message: "تم استخدام هذا الكود بالكامل من قبل." };
       }
-      // Fallback for other transaction abortion reasons
-      return { success: false, message: "فشل التحقق من كود الشحن أو استخدامه."};
+      if (!codeData.isActive) { 
+        return { success: false, message: "هذا الكود غير فعال حاليًا. يرجى مراجعة المسؤول." };
+      }
+      return { success: false, message: "فشل التحقق من كود الشحن. يرجى المحاولة مرة أخرى."};
     }
 
   } catch (error) {
     console.error("Error during chargeWalletWithCode operation:", error);
-    // This could be a network error or other unexpected issue.
     return { success: false, message: "حدث خطأ أثناء عملية شحن الرصيد. يرجى المحاولة مرة أخرى." };
   }
 };
@@ -224,7 +213,6 @@ export const startTrip = async (tripId: string): Promise<void> => {
     if (trip.status === 'upcoming') {
       await update(tripRef, { status: 'ongoing', updatedAt: serverTimestamp() });
     } else {
-      // This error will be caught by the calling function and can be shown in a toast
       console.error("Trip is not upcoming and cannot be started. Current status:", trip.status);
       throw new Error("الرحلة ليست قادمة ولا يمكن بدؤها.");
     }
@@ -424,6 +412,3 @@ export const addStopsToRoute = async (startPointId: string, destinationId: strin
     console.log(`All stops for route ${routeKey} cleared.`);
   }
 };
-
-    
-
