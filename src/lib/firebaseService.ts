@@ -306,31 +306,61 @@ export const getTripById = async (tripId: string): Promise<Trip | null> => {
 
 
 export const getActiveTripForDriver = async (driverId: string): Promise<Trip | null> => {
-  const tripsQuery = query(ref(databaseInternal, CURRENT_TRIPS_PATH), orderByChild('driverId'), equalTo(driverId));
-  const snapshot = await get(tripsQuery); 
+  // IMPORTANT: Client-side filtering below. For better performance and to avoid fetching all trips, 
+  // add ".indexOn": "driverId" to your Firebase Realtime Database rules for the "/currentTrips" path.
+  // Example rule:
+  // {
+  //   "rules": {
+  //     "currentTrips": {
+  //       ".indexOn": "driverId"
+  //     }
+  //   }
+  // }
+  const tripsRef = ref(databaseInternal, CURRENT_TRIPS_PATH);
+  const snapshot = await get(tripsRef);
 
   if (snapshot.exists()) {
-    let activeTrip: Trip | null = null;
+    let ongoingTrip: Trip | null = null;
+    let upcomingTrip: Trip | null = null;
+
     snapshot.forEach((childSnapshot) => {
       const trip = childSnapshot.val() as Trip;
-      if (trip.status === 'upcoming' || trip.status === 'ongoing') {
-        activeTrip = trip; 
+      if (trip.driverId === driverId) { // Filter by driverId on the client-side
+          if (trip.status === 'ongoing') {
+            if (!ongoingTrip || new Date(trip.dateTime) < new Date(ongoingTrip.dateTime)) {
+                ongoingTrip = trip;
+            }
+          } else if (trip.status === 'upcoming') {
+            if (!upcomingTrip || new Date(trip.dateTime) < new Date(upcomingTrip.dateTime)) {
+                upcomingTrip = trip;
+            }
+          }
       }
     });
-    return activeTrip;
+    return ongoingTrip || upcomingTrip; 
   }
   return null;
 };
 
 export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Promise<Trip[]> => {
-  const tripsQuery = query(ref(databaseInternal, CURRENT_TRIPS_PATH), orderByChild('driverId'), equalTo(driverId));
-  const snapshot = await get(tripsQuery); 
+  // IMPORTANT: Client-side filtering below. For better performance and to avoid fetching all trips, 
+  // add ".indexOn": "driverId" to your Firebase Realtime Database rules for the "/currentTrips" path.
+  // Example rule:
+  // {
+  //   "rules": {
+  //     "currentTrips": {
+  //       ".indexOn": "driverId"
+  //     }
+  //   }
+  // }
+  const tripsRef = ref(databaseInternal, CURRENT_TRIPS_PATH);
+  const snapshot = await get(tripsRef);
   const trips: Trip[] = [];
 
   if (snapshot.exists()) {
     snapshot.forEach((childSnapshot) => {
       const trip = childSnapshot.val() as Trip;
-      if (trip.status === 'upcoming' || trip.status === 'ongoing') {
+      if (trip.driverId === driverId && (trip.status === 'upcoming' || trip.status === 'ongoing')) {
         trips.push(trip);
       }
     });
