@@ -109,9 +109,9 @@ export const updateUserProfile = async (userId: string, updates: Partial<UserPro
 
 // --- Wallet Service (Charge Code Logic) ---
 interface ChargeCode {
-  value: number;
-  usesLeft: number;
-  isActive: boolean;
+  value: number; // The monetary value of the code
+  usesLeft: number; // How many times this code can be used
+  isActive: boolean; // Whether the code is generally active
 }
 
 export const chargeWalletWithCode = async (
@@ -122,54 +122,76 @@ export const chargeWalletWithCode = async (
     return { success: false, message: "معرف المستخدم أو كود الشحن مفقود." };
   }
 
-  const chargeCodeRef = ref(databaseInternal, `admin_charge_codes/${chargeCodeInput}`);
   const userProfileRef = ref(databaseInternal, `users/${userId}`);
+  const chargeCodeRef = ref(databaseInternal, `admin_charge_codes/${chargeCodeInput}`);
 
   try {
-    const result = await runTransaction(userProfileRef, (currentProfileData: UserProfile | null) => {
-      if (currentProfileData === null) {
-        return; 
+    // Step 1: Perform a transaction on the charge code to ensure atomic "usage"
+    const transactionResult = await runTransaction(chargeCodeRef, (currentCodeData: ChargeCode | null) => {
+      if (currentCodeData === null) {
+        // Code does not exist in admin_charge_codes
+        return; // Abort transaction, indicating code is invalid
       }
-      return currentProfileData; 
+      if (!currentCodeData.isActive || currentCodeData.usesLeft <= 0) {
+        // Code is not active or has no uses left
+        return; // Abort transaction, indicating code is invalid
+      }
+      
+      // If valid, "use" the code by decrementing usesLeft and updating isActive
+      currentCodeData.usesLeft -= 1;
+      currentCodeData.isActive = currentCodeData.usesLeft > 0;
+      return currentCodeData; // Return the modified data to commit the transaction
     });
 
-    if (!result.committed || !result.snapshot.exists()) {
-       const userProfileSnapshot = await get(userProfileRef);
-       if (!userProfileSnapshot.exists()) {
-         return { success: false, message: "لم يتم العثور على ملف المستخدم." };
-       }
-       let userProfile = userProfileSnapshot.val() as UserProfile;
-       userProfile.walletBalance = userProfile.walletBalance || 0;
+    // Step 2: Process the outcome of the transaction
+    if (transactionResult.committed && transactionResult.snapshot.exists()) {
+      // The transaction was successful, and the charge code was "spent" (or its uses decremented).
+      const usedCodeData = transactionResult.snapshot.val() as ChargeCode;
+      const chargeAmount = usedCodeData.value; // The monetary value of the code
 
+      // Now, fetch the user's current profile to update their wallet balance.
+      const userProfileSnapshot = await get(userProfileRef);
+      if (!userProfileSnapshot.exists()) {
+        // This is an unlikely scenario if userId is correct, but a critical safeguard.
+        // If the user profile doesn't exist, we can't update the balance.
+        // The charge code has already been "spent". This situation might require manual intervention or more complex rollback logic (ideally via Cloud Functions).
+        console.error(`User profile for userId ${userId} not found after successfully committing charge code ${chargeCodeInput}. Code usage was recorded.`);
+        return { 
+          success: false, 
+          message: "تم استخدام الكود بنجاح، ولكن حدث خطأ أثناء تحديث رصيد المستخدم. يرجى التواصل مع الدعم." 
+        };
+      }
+      
+      let userProfile = userProfileSnapshot.val() as UserProfile;
+      const currentBalance = userProfile.walletBalance || 0;
+      const newBalance = currentBalance + chargeAmount;
+      
+      await update(userProfileRef, { walletBalance: newBalance });
 
-       const codeSnapshot = await get(chargeCodeRef);
-       if (!codeSnapshot.exists()) {
-         return { success: false, message: "كود الشحن غير صالح." };
-       }
-       const codeData = codeSnapshot.val() as ChargeCode;
-
-       if (!codeData.isActive || codeData.usesLeft <= 0) {
-         return { success: false, message: "كود الشحن غير فعال أو تم استخدامه بالكامل." };
-       }
-       
-       const newBalance = (userProfile.walletBalance || 0) + codeData.value;
-       
-       await update(userProfileRef, { walletBalance: newBalance });
-       await update(chargeCodeRef, { usesLeft: codeData.usesLeft - 1, isActive: (codeData.usesLeft - 1 > 0) });
-
-       return {
-         success: true,
-         message: `تم شحن الرصيد بنجاح بقيمة ${codeData.value} د.أ. الرصيد الجديد: ${newBalance.toFixed(2)} د.أ.`,
-         newBalance: newBalance,
-       };
-
+      return {
+        success: true,
+        message: `تم شحن الرصيد بنجاح بقيمة ${chargeAmount.toFixed(2)} د.أ. الرصيد الجديد: ${newBalance.toFixed(2)} د.أ.`,
+        newBalance: newBalance,
+      };
     } else {
-      return { success: false, message: "حدث خطأ غير متوقع أثناء محاولة شحن الرصيد." };
+      // The transaction was aborted. This means the code was invalid (e.g., didn't exist, was inactive, or had no uses left at the time of the transaction).
+      // For a more specific message, we can re-fetch the current state of the code (optional, as the transaction already determined invalidity).
+      const currentCodeSnapshot = await get(chargeCodeRef);
+      if (!currentCodeSnapshot.exists()) {
+        return { success: false, message: "كود الشحن غير صالح أو غير موجود." };
+      }
+      const codeData = currentCodeSnapshot.val() as ChargeCode; // Check its state
+      if (!codeData.isActive || codeData.usesLeft <= 0) {
+        return { success: false, message: "كود الشحن غير فعال أو تم استخدامه بالكامل." };
+      }
+      // Fallback for other transaction abortion reasons
+      return { success: false, message: "فشل التحقق من كود الشحن أو استخدامه."};
     }
 
   } catch (error) {
-    console.error("Error charging wallet:", error);
-    return { success: false, message: "فشل شحن الرصيد. الرجاء المحاولة مرة أخرى." };
+    console.error("Error during chargeWalletWithCode operation:", error);
+    // This could be a network error or other unexpected issue.
+    return { success: false, message: "حدث خطأ أثناء عملية شحن الرصيد. يرجى المحاولة مرة أخرى." };
   }
 };
 
@@ -404,3 +426,4 @@ export const addStopsToRoute = async (startPointId: string, destinationId: strin
 };
 
     
+
