@@ -4,12 +4,22 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertTriangle, Briefcase, CalendarDays, Clock, DollarSign, Download, Filter, MapPin, Route, Users, Armchair, ListChecks, Loader2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { AlertTriangle, Briefcase, CalendarDays, Clock, DollarSign, Download, Filter, MapPin, Route, Users, Armchair, ListChecks, Loader2, Wallet, Gift } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { JORDAN_GOVERNORATES, SEAT_CONFIG, type SeatID } from '@/lib/constants';
-import { auth, onAuthUserChangedListener, getCompletedTripsForDriver, type Trip } from '@/lib/firebaseService';
+import { 
+    auth, 
+    onAuthUserChangedListener, 
+    getCompletedTripsForDriver, 
+    type Trip,
+    type UserProfile,
+    getUserProfile,
+    chargeWalletWithCode
+} from '@/lib/firebaseService';
 import { useRouter } from 'next/navigation';
 
 
@@ -102,27 +112,67 @@ function CompletedTripCard({ trip }: { trip: Trip }) {
 export default function HistoryPage() {
   const [completedTrips, setCompletedTrips] = useState<Trip[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [chargeCodeInput, setChargeCodeInput] = useState('');
+  const [isChargingWallet, setIsChargingWallet] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
 
   useEffect(() => {
-    const fetchHistory = async (userId: string) => {
+    const fetchInitialData = async (userId: string) => {
       setIsLoading(true);
-      const trips = await getCompletedTripsForDriver(userId);
-      setCompletedTrips(trips);
-      setIsLoading(false);
+      try {
+        const [trips, profile] = await Promise.all([
+          getCompletedTripsForDriver(userId),
+          getUserProfile(userId)
+        ]);
+        setCompletedTrips(trips);
+        setUserProfile(profile);
+      } catch (error) {
+        console.error("Error fetching history or profile:", error);
+        toast({ title: "خطأ في تحميل البيانات", variant: "destructive" });
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     const unsubscribe = onAuthUserChangedListener(user => {
         if (user) {
-            fetchHistory(user.uid);
+            fetchInitialData(user.uid);
         } else {
             router.push('/auth/signin');
             setIsLoading(false);
         }
     });
     return () => unsubscribe();
-  }, [router]);
+  }, [router, toast]);
+
+  const handleChargeWallet = async () => {
+    if (!chargeCodeInput.trim()) {
+      toast({ title: "الرجاء إدخال كود الشحن", variant: "destructive" });
+      return;
+    }
+    if (!auth.currentUser) {
+      toast({ title: "المستخدم غير مسجل الدخول", variant: "destructive" });
+      return;
+    }
+
+    setIsChargingWallet(true);
+    const result = await chargeWalletWithCode(auth.currentUser.uid, chargeCodeInput.trim());
+    setIsChargingWallet(false);
+
+    toast({
+      title: result.success ? "نجاح" : "خطأ",
+      description: result.message,
+      variant: result.success ? "default" : "destructive",
+    });
+
+    if (result.success && result.newBalance !== undefined) {
+      setUserProfile(prev => prev ? { ...prev, walletBalance: result.newBalance } : null);
+      setChargeCodeInput(''); // Clear input on success
+    }
+  };
+
 
   const totalEarnings = completedTrips
     .filter(trip => trip.status === 'completed' && trip.earnings !== undefined)
@@ -137,8 +187,8 @@ export default function HistoryPage() {
   }
 
   return (
-    <div>
-      <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
         <h1 className="text-3xl font-bold h-underline flex items-center">
           <ListChecks className="me-3 h-8 w-8 text-primary" />
           سجل الرحلات
@@ -153,13 +203,47 @@ export default function HistoryPage() {
         </div>
       </div>
 
-      <Card className="mb-6 bg-secondary/50">
+      <Card className="bg-secondary/50">
         <CardContent className="p-4">
           <p className="text-lg font-semibold">إجمالي الأرباح من الرحلات المكتملة: <span className="text-green-600">{totalEarnings.toFixed(2)} د.أ</span></p>
         </CardContent>
       </Card>
 
-      {completedTrips.length === 0 ? (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center text-xl">
+            <Wallet className="ms-2 h-6 w-6 text-primary" />
+            المحفظة
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-lg font-semibold">
+            الرصيد الحالي: <span className="text-primary">{(userProfile?.walletBalance || 0).toFixed(2)} د.أ</span>
+          </p>
+          <div className="space-y-2">
+            <Label htmlFor="chargeCode">كود الشحن</Label>
+            <div className="flex items-center gap-2">
+              <Input 
+                id="chargeCode" 
+                placeholder="أدخل كود الشحن هنا" 
+                value={chargeCodeInput}
+                onChange={(e) => setChargeCodeInput(e.target.value)}
+                disabled={isChargingWallet}
+              />
+              <Button onClick={handleChargeWallet} disabled={isChargingWallet || !chargeCodeInput.trim()}>
+                {isChargingWallet ? <Loader2 className="animate-spin" /> : <Gift className="ms-2 h-4 w-4" />}
+                شحن الرصيد
+              </Button>
+            </div>
+             <p className="text-xs text-muted-foreground">
+              يمكنك الحصول على أكواد الشحن من مسؤول النظام.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+
+      {completedTrips.length === 0 && !isLoading ? (
         <Card className="text-center py-10">
           <CardContent className="flex flex-col items-center">
             <AlertTriangle className="w-16 h-16 text-muted-foreground mb-4" />
@@ -176,3 +260,4 @@ export default function HistoryPage() {
     </div>
   );
 }
+

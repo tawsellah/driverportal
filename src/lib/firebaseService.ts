@@ -6,7 +6,7 @@ import {
   onAuthStateChanged,
   type User as FirebaseAuthUser 
 } from 'firebase/auth';
-import { ref, set, get, child, update, remove, query, orderByChild, equalTo, serverTimestamp } from 'firebase/database';
+import { ref, set, get, child, update, remove, query, orderByChild, equalTo, serverTimestamp, runTransaction } from 'firebase/database';
 import type { SeatID } from './constants';
 import { SEAT_CONFIG } from './constants'; 
 
@@ -42,6 +42,7 @@ export interface UserProfile {
     cash?: boolean;
     clickCode?: string;
   };
+  walletBalance?: number; // Added wallet balance
   createdAt: any; 
 }
 
@@ -76,11 +77,12 @@ export const onAuthUserChangedListener = (callback: (user: FirebaseAuthUser | nu
 
 
 // --- User Profile Service ---
-export const saveUserProfile = async (userId: string, profileData: Omit<UserProfile, 'id' | 'createdAt' | 'vehicleMakeModel'>): Promise<void> => {
+export const saveUserProfile = async (userId: string, profileData: Omit<UserProfile, 'id' | 'createdAt' >): Promise<void> => {
   const userRef = ref(databaseInternal, `users/${userId}`);
   const fullProfileData: UserProfile = {
     id: userId,
     ...profileData,
+    walletBalance: profileData.walletBalance || 0, // Initialize wallet balance
     createdAt: serverTimestamp(),
   };
   await set(userRef, fullProfileData);
@@ -90,7 +92,12 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
   const userRef = ref(databaseInternal, `users/${userId}`);
   const snapshot = await get(userRef);
   if (snapshot.exists()) {
-    return snapshot.val() as UserProfile;
+    const profile = snapshot.val() as UserProfile;
+    // Ensure walletBalance has a default value if not present
+    if (profile.walletBalance === undefined || profile.walletBalance === null) {
+        profile.walletBalance = 0;
+    }
+    return profile;
   }
   return null;
 };
@@ -98,6 +105,104 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 export const updateUserProfile = async (userId: string, updates: Partial<UserProfile>): Promise<void> => {
   const userRef = ref(databaseInternal, `users/${userId}`);
   await update(userRef, updates);
+};
+
+// --- Wallet Service (Charge Code Logic) ---
+interface ChargeCode {
+  value: number;
+  usesLeft: number;
+  isActive: boolean;
+}
+
+/**
+ * IMPORTANT SECURITY WARNING:
+ * This function implements charge code validation and wallet balance updates directly
+ * from the client-side. This is EXTREMELY INSECURE for a production application.
+ * Anyone can inspect the client-side code, understand how codes are validated,
+ * and potentially abuse the system to add funds to their wallet or reuse codes.
+ *
+ * In a real application, this ENTIRE LOGIC (code validation, fetching user balance,
+ * updating balance, and marking code as used) MUST be handled by a secure
+ * Firebase Cloud Function (or a similar backend service). The client should only
+ * send the chargeCode and userId to the Cloud Function, and the Cloud Function
+ * would perform all sensitive operations.
+ */
+export const chargeWalletWithCode = async (
+  userId: string,
+  chargeCodeInput: string
+): Promise<{ success: boolean; message: string; newBalance?: number }> => {
+  if (!userId || !chargeCodeInput) {
+    return { success: false, message: "معرف المستخدم أو كود الشحن مفقود." };
+  }
+
+  const chargeCodeRef = ref(databaseInternal, `admin_charge_codes/${chargeCodeInput}`);
+  const userProfileRef = ref(databaseInternal, `users/${userId}`);
+
+  try {
+    const result = await runTransaction(userProfileRef, (currentProfileData: UserProfile | null) => {
+      if (currentProfileData === null) {
+        // User profile doesn't exist, abort transaction
+        // This case should ideally not happen if user is logged in
+        return; // Aborts the transaction
+      }
+
+      // We need to fetch the charge code data within the transaction as well,
+      // or rather, the secure way is for a Cloud Function to do this.
+      // For this client-side mock, we'll fetch it outside and pass its effect.
+      // This is still part of the insecure mock.
+      return currentProfileData; // Placeholder, actual logic below
+    });
+
+    if (!result.committed || !result.snapshot.exists()) {
+       // Transaction aborted or profile doesn't exist (should be caught by initial check in a real scenario)
+       // For the mock, if the profile was null, the transaction would abort.
+       // Let's refine the mock:
+       const userProfileSnapshot = await get(userProfileRef);
+       if (!userProfileSnapshot.exists()) {
+         return { success: false, message: "لم يتم العثور على ملف المستخدم." };
+       }
+       let userProfile = userProfileSnapshot.val() as UserProfile;
+       userProfile.walletBalance = userProfile.walletBalance || 0;
+
+
+       const codeSnapshot = await get(chargeCodeRef);
+       if (!codeSnapshot.exists()) {
+         return { success: false, message: "كود الشحن غير صالح." };
+       }
+       const codeData = codeSnapshot.val() as ChargeCode;
+
+       if (!codeData.isActive || codeData.usesLeft <= 0) {
+         return { success: false, message: "كود الشحن غير فعال أو تم استخدامه بالكامل." };
+       }
+
+       // If we were in a real transaction, we'd update usesLeft and walletBalance atomically.
+       // Mocking the update:
+       const newBalance = (userProfile.walletBalance || 0) + codeData.value;
+       
+       // Update user's wallet balance
+       await update(userProfileRef, { walletBalance: newBalance });
+       
+       // Update charge code (decrement usesLeft or set isActive to false)
+       await update(chargeCodeRef, { usesLeft: codeData.usesLeft - 1, isActive: (codeData.usesLeft - 1 > 0) });
+
+       return {
+         success: true,
+         message: `تم شحن الرصيد بنجاح بقيمة ${codeData.value} د.أ. الرصيد الجديد: ${newBalance.toFixed(2)} د.أ.`,
+         newBalance: newBalance,
+       };
+
+    } else {
+      // This block would be for when the transaction successfully committed `currentProfileData`.
+      // However, the critical part (code validation & update) is mocked outside.
+      // This else block is unlikely to be hit correctly in this mocked setup.
+      // The primary logic is in the "refined mock" above.
+      return { success: false, message: "حدث خطأ غير متوقع أثناء محاولة شحن الرصيد." };
+    }
+
+  } catch (error) {
+    console.error("Error charging wallet:", error);
+    return { success: false, message: "فشل شحن الرصيد. الرجاء المحاولة مرة أخرى." };
+  }
 };
 
 
