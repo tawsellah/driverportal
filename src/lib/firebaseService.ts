@@ -20,6 +20,13 @@ export interface PassengerBookingDetails {
   bookedAt: any; 
 }
 
+export interface UserProfileTopUpCode {
+  code: string;
+  amount: number;
+  status: 'unused' | 'used';
+  createdAt: any; // Or number for timestamp
+}
+
 export interface UserProfile {
   id: string; 
   fullName: string;
@@ -34,7 +41,7 @@ export interface UserProfile {
   vehicleYear?: string;
   vehicleColor?: string;
   vehiclePlateNumber?: string;
-  vehiclePhotosUrl?: string | null;
+  vehiclePhotosUrl?: string | null; // Note: was vehiclePhotoUrl in signup, should be consistent or mapped
   rating?: number;
   tripsCount?: number;
   paymentMethods?: {
@@ -43,7 +50,9 @@ export interface UserProfile {
     clickCode?: string;
   };
   walletBalance?: number; 
+  topUpCodes?: Record<string, UserProfileTopUpCode>; // Key is an auto-generated ID for the code entry
   createdAt: any; 
+  updatedAt?: any;
 }
 
 export interface Trip {
@@ -77,12 +86,13 @@ export const onAuthUserChangedListener = (callback: (user: FirebaseAuthUser | nu
 
 
 // --- User Profile Service ---
-export const saveUserProfile = async (userId: string, profileData: Omit<UserProfile, 'id' | 'createdAt' >): Promise<void> => {
+export const saveUserProfile = async (userId: string, profileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt' >): Promise<void> => {
   const userRef = ref(databaseInternal, `users/${userId}`);
   const fullProfileData: UserProfile = {
     id: userId,
     ...profileData,
     walletBalance: profileData.walletBalance || 0, 
+    topUpCodes: profileData.topUpCodes || {},
     createdAt: serverTimestamp(),
   };
   await set(userRef, fullProfileData);
@@ -97,6 +107,9 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
     if (profile.walletBalance === undefined || profile.walletBalance === null) {
         profile.walletBalance = 0;
     }
+    if (!profile.topUpCodes) {
+        profile.topUpCodes = {};
+    }
     return profile;
   }
   return null;
@@ -104,82 +117,99 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 
 export const updateUserProfile = async (userId: string, updates: Partial<UserProfile>): Promise<void> => {
   const userRef = ref(databaseInternal, `users/${userId}`);
-  await update(userRef, updates);
+  await update(userRef, {...updates, updatedAt: serverTimestamp()});
 };
 
 // --- Wallet Service (Charge Code Logic) ---
-interface ChargeCode {
-  value: number; 
-  usesLeft: number; 
-  isActive: boolean; 
-}
 
 export const chargeWalletWithCode = async (
   userId: string,
-  chargeCodeInput: string
+  chargeCodeInputOriginal: string
 ): Promise<{ success: boolean; message: string; newBalance?: number }> => {
-  if (!userId || !chargeCodeInput) {
+  if (!userId || !chargeCodeInputOriginal) {
     return { success: false, message: "معرف المستخدم أو كود الشحن مفقود." };
   }
 
+  const chargeCodeInput = chargeCodeInputOriginal.trim();
+  if (!chargeCodeInput) {
+    return { success: false, message: "الرجاء إدخال كود الشحن." };
+  }
+
   const userProfileRef = ref(databaseInternal, `users/${userId}`);
-  const chargeCodeRef = ref(databaseInternal, `admin_charge_codes/${chargeCodeInput.trim()}`);
 
   try {
-    const transactionResult = await runTransaction(chargeCodeRef, (currentCodeData: ChargeCode | null) => {
-      if (currentCodeData === null) {
-        return; 
+    const transactionResult = await runTransaction(userProfileRef, (currentProfileData: UserProfile | null) => {
+      if (currentProfileData === null) {
+        throw new Error("USER_PROFILE_NOT_FOUND");
       }
-      if (!currentCodeData.isActive || currentCodeData.usesLeft <= 0) {
-        return; 
+
+      if (!currentProfileData.topUpCodes || Object.keys(currentProfileData.topUpCodes).length === 0) {
+        throw new Error("NO_CODES_FOR_ACCOUNT");
       }
+
+      let foundCodeDetails: { entryId: string, data: UserProfileTopUpCode } | null = null;
+
+      for (const entryId in currentProfileData.topUpCodes) {
+        const codeDetail = currentProfileData.topUpCodes[entryId];
+        // Case-insensitive and trimmed comparison
+        if (codeDetail.code && codeDetail.code.trim().toLowerCase() === chargeCodeInput.toLowerCase()) {
+          foundCodeDetails = { entryId, data: codeDetail };
+          break;
+        }
+      }
+
+      if (!foundCodeDetails) {
+        throw new Error("INVALID_CODE");
+      }
+
+      if (foundCodeDetails.data.status === 'used') {
+        throw new Error("USED_CODE");
+      }
+
+      // Code is valid and unused
+      const chargeAmount = foundCodeDetails.data.amount;
+      currentProfileData.walletBalance = (currentProfileData.walletBalance || 0) + chargeAmount;
       
-      currentCodeData.usesLeft -= 1;
-      currentCodeData.isActive = currentCodeData.usesLeft > 0;
-      return currentCodeData; 
+      // Update the status of the specific code entry
+      currentProfileData.topUpCodes[foundCodeDetails.entryId].status = 'used';
+      currentProfileData.updatedAt = serverTimestamp(); // Update timestamp for the profile
+
+      return currentProfileData; // This is the data to be written
     });
 
     if (transactionResult.committed && transactionResult.snapshot.exists()) {
-      const usedCodeData = transactionResult.snapshot.val() as ChargeCode;
-      const chargeAmount = usedCodeData.value; 
-
-      const userProfileSnapshot = await get(userProfileRef);
-      if (!userProfileSnapshot.exists()) {
-        console.error(`User profile for userId ${userId} not found after successfully committing charge code ${chargeCodeInput}. Code usage was recorded.`);
-        return { 
-          success: false, 
-          message: "تم استخدام الكود بنجاح، ولكن حدث خطأ أثناء تحديث رصيد المستخدم. يرجى التواصل مع الدعم." 
-        };
-      }
-      
-      let userProfile = userProfileSnapshot.val() as UserProfile;
-      const currentBalance = userProfile.walletBalance || 0;
-      const newBalance = currentBalance + chargeAmount;
-      
-      await update(userProfileRef, { walletBalance: newBalance });
+      const updatedProfile = transactionResult.snapshot.val() as UserProfile;
+      const usedCodeEntryId = Object.keys(updatedProfile.topUpCodes || {}).find(key => 
+        updatedProfile.topUpCodes?.[key]?.code?.trim()?.toLowerCase() === chargeCodeInput.toLowerCase() && 
+        updatedProfile.topUpCodes?.[key]?.status === 'used'
+      );
+      const chargedAmount = usedCodeEntryId ? (updatedProfile.topUpCodes?.[usedCodeEntryId]?.amount || 0) : 0;
 
       return {
         success: true,
-        message: `تم شحن الرصيد بنجاح بقيمة ${chargeAmount.toFixed(2)} د.أ. الرصيد الجديد: ${newBalance.toFixed(2)} د.أ.`,
-        newBalance: newBalance,
+        message: `تم شحن الرصيد بنجاح بقيمة ${chargedAmount.toFixed(2)} د.أ. الرصيد الجديد: ${(updatedProfile.walletBalance || 0).toFixed(2)} د.أ.`,
+        newBalance: updatedProfile.walletBalance,
       };
     } else {
-      const currentCodeSnapshot = await get(chargeCodeRef);
-      if (!currentCodeSnapshot.exists()) {
-        return { success: false, message: "كود الشحن المدخل غير صالح." };
-      }
-      const codeData = currentCodeSnapshot.val() as ChargeCode; 
-      if (codeData.usesLeft <= 0) {
-        return { success: false, message: "تم استخدام هذا الكود بالكامل من قبل." };
-      }
-      if (!codeData.isActive) { 
-        return { success: false, message: "هذا الكود غير فعال حاليًا. يرجى مراجعة المسؤول." };
-      }
-      return { success: false, message: "فشل التحقق من كود الشحن. يرجى المحاولة مرة أخرى."};
+      // This path might be hit if the transaction was aborted explicitly by returning undefined,
+      // or if it failed after retries (e.g., due to contention or if the data becomes null and we didn't throw).
+      // Given the specific error throws above, this is less likely for the known error conditions.
+      return { success: false, message: "فشلت عملية شحن الرصيد بسبب تنازع في البيانات أو خطأ غير متوقع. يرجى المحاولة مرة أخرى." };
     }
 
-  } catch (error) {
-    console.error("Error during chargeWalletWithCode operation:", error);
+  } catch (error: any) {
+    // Handle errors explicitly thrown from inside the transaction
+    if (error.message === "USER_PROFILE_NOT_FOUND") {
+      return { success: false, message: "لم يتم العثور على ملف المستخدم." };
+    } else if (error.message === "NO_CODES_FOR_ACCOUNT") {
+      return { success: false, message: "لا توجد أكواد شحن معرفة لهذا الحساب." };
+    } else if (error.message === "INVALID_CODE") {
+      return { success: false, message: "كود الشحن المدخل غير صالح." };
+    } else if (error.message === "USED_CODE") {
+      return { success: false, message: "تم استخدام هذا الكود مسبقًا." };
+    }
+    // Generic error for other transaction failures or unexpected errors
+    console.error("Error during chargeWalletWithCode transaction:", error);
     return { success: false, message: "حدث خطأ أثناء عملية شحن الرصيد. يرجى المحاولة مرة أخرى." };
   }
 };
@@ -199,6 +229,7 @@ export const addTrip = async (driverId: string, tripData: NewTripData): Promise<
     driverId,
     status: 'upcoming',
     createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   };
   const tripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
   await set(tripRef, newTrip);
@@ -234,7 +265,7 @@ export const deleteTrip = async (tripId: string): Promise<void> => {
   if (snapshot.exists()) {
     const tripToEnd = snapshot.val() as Trip;
      if (tripToEnd.status === 'upcoming' || tripToEnd.status === 'ongoing') {
-      const updates: Partial<Trip> = { status: 'cancelled', updatedAt: serverTimestamp() };
+      const updates: Partial<Trip> = { status: 'cancelled', earnings: 0, updatedAt: serverTimestamp() };
       
       const finishedTripData: Trip = {
         ...tripToEnd,
@@ -243,7 +274,11 @@ export const deleteTrip = async (tripId: string): Promise<void> => {
       const finishedTripRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${tripToEnd.driverId}/${tripToEnd.id}`);
       await set(finishedTripRef, finishedTripData);
       await remove(tripRef); 
+    } else {
+      console.warn(`Trip ${tripId} is not upcoming or ongoing, cannot cancel. Status: ${tripToEnd.status}`);
     }
+  } else {
+     console.warn(`Trip ${tripId} not found in currentTrips for deletion/cancellation.`);
   }
 };
 
@@ -271,18 +306,15 @@ export const getTripById = async (tripId: string): Promise<Trip | null> => {
 
 
 export const getActiveTripForDriver = async (driverId: string): Promise<Trip | null> => {
-  console.warn("[WORKAROUND] Fetching all current trips and filtering client-side due to missing Firebase index. Add '.indexOn': ['driverId', 'status'] to 'currentTrips' rules for better performance.");
-  
-  const tripsRef = ref(databaseInternal, CURRENT_TRIPS_PATH);
-  const snapshot = await get(tripsRef); 
+  const tripsQuery = query(ref(databaseInternal, CURRENT_TRIPS_PATH), orderByChild('driverId'), equalTo(driverId));
+  const snapshot = await get(tripsQuery); 
 
   if (snapshot.exists()) {
     let activeTrip: Trip | null = null;
     snapshot.forEach((childSnapshot) => {
       const trip = childSnapshot.val() as Trip;
-      if (trip.driverId === driverId && (trip.status === 'upcoming' || trip.status === 'ongoing')) {
-        activeTrip = trip;
-        return true; 
+      if (trip.status === 'upcoming' || trip.status === 'ongoing') {
+        activeTrip = trip; 
       }
     });
     return activeTrip;
@@ -291,16 +323,14 @@ export const getActiveTripForDriver = async (driverId: string): Promise<Trip | n
 };
 
 export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Promise<Trip[]> => {
-  console.warn("[WORKAROUND] Fetching all current trips and filtering client-side due to missing Firebase index. Add '.indexOn': ['driverId', 'status'] to 'currentTrips' rules for better performance.");
-
-  const tripsRef = ref(databaseInternal, CURRENT_TRIPS_PATH);
-  const snapshot = await get(tripsRef); 
+  const tripsQuery = query(ref(databaseInternal, CURRENT_TRIPS_PATH), orderByChild('driverId'), equalTo(driverId));
+  const snapshot = await get(tripsQuery); 
   const trips: Trip[] = [];
 
   if (snapshot.exists()) {
     snapshot.forEach((childSnapshot) => {
       const trip = childSnapshot.val() as Trip;
-      if (trip.driverId === driverId && (trip.status === 'upcoming' || trip.status === 'ongoing')) {
+      if (trip.status === 'upcoming' || trip.status === 'ongoing') {
         trips.push(trip);
       }
     });
@@ -310,14 +340,14 @@ export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Pro
 
 export const getCompletedTripsForDriver = async (driverId: string): Promise<Trip[]> => {
   const tripsRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${driverId}`);
-  const snapshot = await get(tripsRef);
+  const snapshot = await get(query(tripsRef, orderByChild('updatedAt'))); 
   const trips: Trip[] = [];
   if (snapshot.exists()) {
     snapshot.forEach((childSnapshot) => {
       trips.push(childSnapshot.val() as Trip);
     });
   }
-  return trips.sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());
+  return trips.reverse(); 
 };
 
 export const endTrip = async (tripToEnd: Trip, earnings: number): Promise<void> => {
@@ -340,11 +370,13 @@ export const endTrip = async (tripToEnd: Trip, earnings: number): Promise<void> 
   await remove(originalTripRef);
 
   const userProfileRef = ref(databaseInternal, `users/${tripToEnd.driverId}`);
-  const userProfileSnap = await get(userProfileRef);
-  if (userProfileSnap.exists()) {
-      const currentTripsCount = userProfileSnap.val().tripsCount || 0;
-      await update(userProfileRef, { tripsCount: currentTripsCount + 1 });
-  }
+  await runTransaction(userProfileRef, (currentProfile: UserProfile | null) => {
+    if (currentProfile) {
+      currentProfile.tripsCount = (currentProfile.tripsCount || 0) + 1;
+      currentProfile.updatedAt = serverTimestamp();
+    }
+    return currentProfile;
+  });
 };
 
 export const getTrips = async (): Promise<Trip[]> => {
@@ -387,28 +419,24 @@ export const addStopsToRoute = async (startPointId: string, destinationId: strin
   const routeLastUpdatedRef = ref(databaseInternal, `${STOP_STATIONS_PATH}/${routeKey}/lastUpdated`);
 
   const validNewStops = newStops.filter(stop => typeof stop === 'string' && stop.trim() !== '');
+  if (validNewStops.length === 0) return; 
 
   const snapshot = await get(routeStopsRef);
   let existingStops: string[] = [];
   if (snapshot.exists()) {
     const stopsData = snapshot.val();
-    if (Array.isArray(stopsData)) {
+     if (Array.isArray(stopsData)) {
         existingStops = stopsData.filter(stop => typeof stop === 'string' && stop.trim() !== '');
     } else if (typeof stopsData === 'object' && stopsData !== null) {
         existingStops = Object.values(stopsData).filter(stop => typeof stop === 'string' && (stop as string).trim() !== '') as string[];
     }
   }
 
-  const combinedStops = new Set([...existingStops, ...validNewStops]);
-  const uniqueStopsArray = Array.from(combinedStops);
+  const combinedStopsSet = new Set(existingStops);
+  validNewStops.forEach(stop => combinedStopsSet.add(stop));
+  const uniqueStopsArray = Array.from(combinedStopsSet);
 
-  if (uniqueStopsArray.length > 0) {
-    await set(routeStopsRef, uniqueStopsArray);
-    await set(routeLastUpdatedRef, serverTimestamp());
-    console.log(`Stops for route ${routeKey} updated:`, uniqueStopsArray);
-  } else if (existingStops.length > 0 && uniqueStopsArray.length === 0) {
-    await set(routeStopsRef, null); 
-    await set(routeLastUpdatedRef, serverTimestamp());
-    console.log(`All stops for route ${routeKey} cleared.`);
-  }
+  await set(routeStopsRef, uniqueStopsArray);
+  await set(routeLastUpdatedRef, serverTimestamp());
+  console.log(`Stops for route ${routeKey} updated:`, uniqueStopsArray);
 };
