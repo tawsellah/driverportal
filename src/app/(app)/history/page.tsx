@@ -158,7 +158,8 @@ export default function HistoryPage() {
     }
 
     setIsChargingWallet(true);
-    const result = await chargeWalletWithCode(auth.currentUser.uid, chargeCodeInput.trim());
+    const currentUserId = auth.currentUser.uid;
+    const result = await chargeWalletWithCode(currentUserId, chargeCodeInput.trim());
     setIsChargingWallet(false);
 
     toast({
@@ -167,8 +168,21 @@ export default function HistoryPage() {
       variant: result.success ? "default" : "destructive",
     });
 
-    if (result.success && result.newBalance !== undefined) {
-      setUserProfile(prev => prev ? { ...prev, walletBalance: result.newBalance } : null);
+    if (result.success) {
+      // Wallet charged successfully in DB. Update local UI.
+      if (result.newBalance !== undefined) {
+        if (userProfile) { // If local profile exists, update it directly
+          setUserProfile(prev => ({ ...prev!, walletBalance: result.newBalance! }));
+        } else { // Local profile is null, fetch the updated profile from DB
+          try {
+            const freshProfile = await getUserProfile(currentUserId);
+            setUserProfile(freshProfile);
+          } catch (e) {
+            console.error("Failed to refetch profile after successful charge when local was null", e);
+            toast({title:"خطأ", description: "تم شحن الرصيد ولكن حدث خطأ في تحديث عرض الرصيد. حاول تحديث الصفحة.", variant: "destructive"});
+          }
+        }
+      }
       setChargeCodeInput(''); // Clear input on success
     }
   };
