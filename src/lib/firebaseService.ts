@@ -130,7 +130,7 @@ export const chargeWalletWithCode = async (
     return { success: false, message: "معرف المستخدم أو كود الشحن مفقود." };
   }
 
-  const chargeCodeInput = chargeCodeInputOriginal.trim();
+  const chargeCodeInput = chargeCodeInputOriginal.trim().toLowerCase();
   if (!chargeCodeInput) {
     return { success: false, message: "الرجاء إدخال كود الشحن." };
   }
@@ -148,17 +148,18 @@ export const chargeWalletWithCode = async (
       }
 
       let foundCodeDetails: { entryId: string, data: UserProfileTopUpCode } | null = null;
+      let codeEntryIdToUpdate: string | null = null;
 
       for (const entryId in currentProfileData.topUpCodes) {
         const codeDetail = currentProfileData.topUpCodes[entryId];
-        // Case-insensitive and trimmed comparison
-        if (codeDetail.code && codeDetail.code.trim().toLowerCase() === chargeCodeInput.toLowerCase()) {
+        if (codeDetail.code && codeDetail.code.trim().toLowerCase() === chargeCodeInput) {
           foundCodeDetails = { entryId, data: codeDetail };
+          codeEntryIdToUpdate = entryId;
           break;
         }
       }
 
-      if (!foundCodeDetails) {
+      if (!foundCodeDetails || !codeEntryIdToUpdate) {
         throw new Error("INVALID_CODE");
       }
 
@@ -171,7 +172,7 @@ export const chargeWalletWithCode = async (
       currentProfileData.walletBalance = (currentProfileData.walletBalance || 0) + chargeAmount;
       
       // Update the status of the specific code entry
-      currentProfileData.topUpCodes[foundCodeDetails.entryId].status = 'used';
+      currentProfileData.topUpCodes[codeEntryIdToUpdate].status = 'used';
       currentProfileData.updatedAt = serverTimestamp(); // Update timestamp for the profile
 
       return currentProfileData; // This is the data to be written
@@ -179,11 +180,16 @@ export const chargeWalletWithCode = async (
 
     if (transactionResult.committed && transactionResult.snapshot.exists()) {
       const updatedProfile = transactionResult.snapshot.val() as UserProfile;
-      const usedCodeEntryId = Object.keys(updatedProfile.topUpCodes || {}).find(key => 
-        updatedProfile.topUpCodes?.[key]?.code?.trim()?.toLowerCase() === chargeCodeInput.toLowerCase() && 
-        updatedProfile.topUpCodes?.[key]?.status === 'used'
-      );
-      const chargedAmount = usedCodeEntryId ? (updatedProfile.topUpCodes?.[usedCodeEntryId]?.amount || 0) : 0;
+      
+      let chargedAmount = 0;
+      if(updatedProfile.topUpCodes){
+        const usedCodeEntry = Object.values(updatedProfile.topUpCodes).find(
+          (codeDetail) => codeDetail.code.trim().toLowerCase() === chargeCodeInput && codeDetail.status === 'used'
+        );
+        if(usedCodeEntry) {
+            chargedAmount = usedCodeEntry.amount;
+        }
+      }
 
       return {
         success: true,
@@ -275,7 +281,12 @@ export const deleteTrip = async (tripId: string): Promise<void> => {
       await set(finishedTripRef, finishedTripData);
       await remove(tripRef); 
     } else {
-      console.warn(`Trip ${tripId} is not upcoming or ongoing, cannot cancel. Status: ${tripToEnd.status}`);
+      console.warn(`Trip ${tripId} is already completed or cancelled, cannot cancel again. Status: ${tripToEnd.status}`);
+       if (tripToEnd.status === 'completed' || tripToEnd.status === 'cancelled') {
+         // If it somehow exists in currentTrips but is already terminal, just remove it from currentTrips.
+         // This might happen if the move to finishedTrips failed partially.
+         await remove(tripRef);
+       }
     }
   } else {
      console.warn(`Trip ${tripId} not found in currentTrips for deletion/cancellation.`);
@@ -306,79 +317,71 @@ export const getTripById = async (tripId: string): Promise<Trip | null> => {
 
 
 export const getActiveTripForDriver = async (driverId: string): Promise<Trip | null> => {
-  // IMPORTANT: Client-side filtering below. For better performance and to avoid fetching all trips, 
-  // add ".indexOn": "driverId" to your Firebase Realtime Database rules for the "/currentTrips" path.
-  // Example rule:
-  // {
-  //   "rules": {
-  //     "currentTrips": {
-  //       ".indexOn": "driverId"
-  //     }
-  //   }
-  // }
   const tripsRef = ref(databaseInternal, CURRENT_TRIPS_PATH);
-  const snapshot = await get(tripsRef);
+  const snapshot = await get(tripsRef); // Fetch all trips under CURRENT_TRIPS_PATH
 
   if (snapshot.exists()) {
     let ongoingTrip: Trip | null = null;
     let upcomingTrip: Trip | null = null;
+    const now = new Date().getTime();
 
     snapshot.forEach((childSnapshot) => {
       const trip = childSnapshot.val() as Trip;
       if (trip.driverId === driverId) { // Filter by driverId on the client-side
           if (trip.status === 'ongoing') {
-            if (!ongoingTrip || new Date(trip.dateTime) < new Date(ongoingTrip.dateTime)) {
-                ongoingTrip = trip;
+            // If multiple ongoing, pick the one that started most recently or based on dateTime.
+            // For simplicity, let's assume only one ongoing per driver (or take the first found).
+            if (!ongoingTrip || new Date(trip.dateTime).getTime() > new Date(ongoingTrip.dateTime).getTime()) {
+                 ongoingTrip = trip;
             }
           } else if (trip.status === 'upcoming') {
-            if (!upcomingTrip || new Date(trip.dateTime) < new Date(upcomingTrip.dateTime)) {
-                upcomingTrip = trip;
+            // If multiple upcoming, pick the one with the earliest dateTime that hasn't passed.
+            const tripDateTime = new Date(trip.dateTime).getTime();
+            if (tripDateTime >= now) { // Only consider truly upcoming trips
+                if (!upcomingTrip || tripDateTime < new Date(upcomingTrip.dateTime).getTime()) {
+                    upcomingTrip = trip;
+                }
             }
           }
       }
     });
-    return ongoingTrip || upcomingTrip; 
+    return ongoingTrip || upcomingTrip; // Prioritize ongoing trip
   }
   return null;
 };
 
 export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Promise<Trip[]> => {
-  // IMPORTANT: Client-side filtering below. For better performance and to avoid fetching all trips, 
-  // add ".indexOn": "driverId" to your Firebase Realtime Database rules for the "/currentTrips" path.
-  // Example rule:
-  // {
-  //   "rules": {
-  //     "currentTrips": {
-  //       ".indexOn": "driverId"
-  //     }
-  //   }
-  // }
   const tripsRef = ref(databaseInternal, CURRENT_TRIPS_PATH);
-  const snapshot = await get(tripsRef);
+  const snapshot = await get(tripsRef); // Fetch all trips
   const trips: Trip[] = [];
 
   if (snapshot.exists()) {
     snapshot.forEach((childSnapshot) => {
       const trip = childSnapshot.val() as Trip;
+      // Client-side filtering
       if (trip.driverId === driverId && (trip.status === 'upcoming' || trip.status === 'ongoing')) {
         trips.push(trip);
       }
     });
   }
+  // Sort by dateTime in ascending order (earliest first)
   return trips.sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
 };
 
+
 export const getCompletedTripsForDriver = async (driverId: string): Promise<Trip[]> => {
   const tripsRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${driverId}`);
-  const snapshot = await get(query(tripsRef, orderByChild('updatedAt'))); 
+  const snapshot = await get(tripsRef); // Fetch all finished trips for the driver
   const trips: Trip[] = [];
   if (snapshot.exists()) {
     snapshot.forEach((childSnapshot) => {
       trips.push(childSnapshot.val() as Trip);
     });
   }
-  return trips.reverse(); 
+  // Sort by updatedAt in descending order (most recent first) on the client-side
+  return trips.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 };
+
 
 export const endTrip = async (tripToEnd: Trip, earnings: number): Promise<void> => {
   if (!tripToEnd || !tripToEnd.driverId || !tripToEnd.id) {
