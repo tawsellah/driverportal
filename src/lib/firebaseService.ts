@@ -42,7 +42,7 @@ export interface UserProfile {
     cash?: boolean;
     clickCode?: string;
   };
-  walletBalance?: number; // Added wallet balance
+  walletBalance?: number; 
   createdAt: any; 
 }
 
@@ -50,7 +50,7 @@ export interface Trip {
   id: string; 
   driverId: string; 
   startPoint: string; 
-  stops?: string[]; // Stops are now free text
+  stops?: string[]; 
   destination: string; 
   dateTime: string; 
   expectedArrivalTime: string; 
@@ -82,7 +82,7 @@ export const saveUserProfile = async (userId: string, profileData: Omit<UserProf
   const fullProfileData: UserProfile = {
     id: userId,
     ...profileData,
-    walletBalance: profileData.walletBalance || 0, // Initialize wallet balance
+    walletBalance: profileData.walletBalance || 0, 
     createdAt: serverTimestamp(),
   };
   await set(userRef, fullProfileData);
@@ -93,7 +93,7 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
   const snapshot = await get(userRef);
   if (snapshot.exists()) {
     const profile = snapshot.val() as UserProfile;
-    // Ensure walletBalance has a default value if not present
+    
     if (profile.walletBalance === undefined || profile.walletBalance === null) {
         profile.walletBalance = 0;
     }
@@ -114,19 +114,6 @@ interface ChargeCode {
   isActive: boolean;
 }
 
-/**
- * IMPORTANT SECURITY WARNING:
- * This function implements charge code validation and wallet balance updates directly
- * from the client-side. This is EXTREMELY INSECURE for a production application.
- * Anyone can inspect the client-side code, understand how codes are validated,
- * and potentially abuse the system to add funds to their wallet or reuse codes.
- *
- * In a real application, this ENTIRE LOGIC (code validation, fetching user balance,
- * updating balance, and marking code as used) MUST be handled by a secure
- * Firebase Cloud Function (or a similar backend service). The client should only
- * send the chargeCode and userId to the Cloud Function, and the Cloud Function
- * would perform all sensitive operations.
- */
 export const chargeWalletWithCode = async (
   userId: string,
   chargeCodeInput: string
@@ -141,22 +128,12 @@ export const chargeWalletWithCode = async (
   try {
     const result = await runTransaction(userProfileRef, (currentProfileData: UserProfile | null) => {
       if (currentProfileData === null) {
-        // User profile doesn't exist, abort transaction
-        // This case should ideally not happen if user is logged in
-        return; // Aborts the transaction
+        return; 
       }
-
-      // We need to fetch the charge code data within the transaction as well,
-      // or rather, the secure way is for a Cloud Function to do this.
-      // For this client-side mock, we'll fetch it outside and pass its effect.
-      // This is still part of the insecure mock.
-      return currentProfileData; // Placeholder, actual logic below
+      return currentProfileData; 
     });
 
     if (!result.committed || !result.snapshot.exists()) {
-       // Transaction aborted or profile doesn't exist (should be caught by initial check in a real scenario)
-       // For the mock, if the profile was null, the transaction would abort.
-       // Let's refine the mock:
        const userProfileSnapshot = await get(userProfileRef);
        if (!userProfileSnapshot.exists()) {
          return { success: false, message: "لم يتم العثور على ملف المستخدم." };
@@ -174,15 +151,10 @@ export const chargeWalletWithCode = async (
        if (!codeData.isActive || codeData.usesLeft <= 0) {
          return { success: false, message: "كود الشحن غير فعال أو تم استخدامه بالكامل." };
        }
-
-       // If we were in a real transaction, we'd update usesLeft and walletBalance atomically.
-       // Mocking the update:
+       
        const newBalance = (userProfile.walletBalance || 0) + codeData.value;
        
-       // Update user's wallet balance
        await update(userProfileRef, { walletBalance: newBalance });
-       
-       // Update charge code (decrement usesLeft or set isActive to false)
        await update(chargeCodeRef, { usesLeft: codeData.usesLeft - 1, isActive: (codeData.usesLeft - 1 > 0) });
 
        return {
@@ -192,10 +164,6 @@ export const chargeWalletWithCode = async (
        };
 
     } else {
-      // This block would be for when the transaction successfully committed `currentProfileData`.
-      // However, the critical part (code validation & update) is mocked outside.
-      // This else block is unlikely to be hit correctly in this mocked setup.
-      // The primary logic is in the "refined mock" above.
       return { success: false, message: "حدث خطأ غير متوقع أثناء محاولة شحن الرصيد." };
     }
 
@@ -226,6 +194,24 @@ export const addTrip = async (driverId: string, tripData: NewTripData): Promise<
   return newTrip;
 };
 
+export const startTrip = async (tripId: string): Promise<void> => {
+  const tripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
+  const snapshot = await get(tripRef);
+  if (snapshot.exists()) {
+    const trip = snapshot.val() as Trip;
+    if (trip.status === 'upcoming') {
+      await update(tripRef, { status: 'ongoing', updatedAt: serverTimestamp() });
+    } else {
+      // This error will be caught by the calling function and can be shown in a toast
+      console.error("Trip is not upcoming and cannot be started. Current status:", trip.status);
+      throw new Error("الرحلة ليست قادمة ولا يمكن بدؤها.");
+    }
+  } else {
+    console.error("Trip not found for starting:", tripId);
+    throw new Error("لم يتم العثور على الرحلة لبدءها.");
+  }
+};
+
 export const updateTrip = async (tripId: string, updates: Partial<Trip>): Promise<void> => {
   const tripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
   const updateData = { ...updates, updatedAt: serverTimestamp() }; 
@@ -240,15 +226,13 @@ export const deleteTrip = async (tripId: string): Promise<void> => {
      if (tripToEnd.status === 'upcoming' || tripToEnd.status === 'ongoing') {
       const updates: Partial<Trip> = { status: 'cancelled', updatedAt: serverTimestamp() };
       
-
-      // Move to finishedTrips
       const finishedTripData: Trip = {
         ...tripToEnd,
         ...updates,
       };
       const finishedTripRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${tripToEnd.driverId}/${tripToEnd.id}`);
       await set(finishedTripRef, finishedTripData);
-      await remove(tripRef); // Remove from currentTrips
+      await remove(tripRef); 
     }
   }
 };
@@ -259,7 +243,7 @@ export const getTripById = async (tripId: string): Promise<Trip | null> => {
     if (snapshot.exists()) {
         return snapshot.val() as Trip;
     }
-    // Also check finishedTrips if not found in currentTrips (e.g., for history page access)
+    
     const finishedTripsSnapshot = await get(ref(databaseInternal, FINISHED_TRIPS_PATH));
     if(finishedTripsSnapshot.exists()){
         let foundTrip: Trip | null = null;
@@ -267,7 +251,7 @@ export const getTripById = async (tripId: string): Promise<Trip | null> => {
             const driverTrips = driverNode.val();
             if(driverTrips[tripId]){
                 foundTrip = driverTrips[tripId] as Trip;
-                return true; // break forEach
+                return true; 
             }
         });
         if(foundTrip) return foundTrip;
@@ -377,11 +361,9 @@ export const getStopStationsForRoute = async (startPointId: string, destinationI
   const snapshot = await get(routeRef);
   if (snapshot.exists()) {
     const stopsData = snapshot.val();
-    // Ensure stopsData is an array, handle cases where it might be an object if previously saved incorrectly
     if (Array.isArray(stopsData)) {
       return stopsData.filter(stop => typeof stop === 'string' && stop.trim() !== '');
     } else if (typeof stopsData === 'object' && stopsData !== null) {
-      // Fallback for old data structure if stops were like {0: "stop1", 1: "stop2"}
       return Object.values(stopsData).filter(stop => typeof stop === 'string' && (stop as string).trim() !== '') as string[];
     }
   }
@@ -394,7 +376,6 @@ export const addStopsToRoute = async (startPointId: string, destinationId: strin
   const routeStopsRef = ref(databaseInternal, `${STOP_STATIONS_PATH}/${routeKey}/stops`);
   const routeLastUpdatedRef = ref(databaseInternal, `${STOP_STATIONS_PATH}/${routeKey}/lastUpdated`);
 
-  // Filter out any empty or non-string stops from input
   const validNewStops = newStops.filter(stop => typeof stop === 'string' && stop.trim() !== '');
 
   const snapshot = await get(routeStopsRef);
@@ -416,7 +397,6 @@ export const addStopsToRoute = async (startPointId: string, destinationId: strin
     await set(routeLastUpdatedRef, serverTimestamp());
     console.log(`Stops for route ${routeKey} updated:`, uniqueStopsArray);
   } else if (existingStops.length > 0 && uniqueStopsArray.length === 0) {
-    // If all stops were removed, clear them from DB
     await set(routeStopsRef, null); 
     await set(routeLastUpdatedRef, serverTimestamp());
     console.log(`All stops for route ${routeKey} cleared.`);

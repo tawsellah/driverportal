@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { Plus, Edit3, Trash2, Users, Route, MapPin, CalendarDays, Clock, Armchair, DollarSign, Loader2, AlertTriangle, Ban, CheckCircle } from 'lucide-react';
+import { Plus, Edit3, Users, Route, MapPin, CalendarDays, Clock, Armchair, DollarSign, Loader2, AlertTriangle, Ban, CheckCircle, Play } from 'lucide-react'; // Added Play icon
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -19,7 +19,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { JORDAN_GOVERNORATES, SEAT_CONFIG, type SeatID } from '@/lib/constants';
 import { 
@@ -27,11 +27,12 @@ import {
     getUpcomingAndOngoingTripsForDriver, 
     deleteTrip as fbDeleteTrip, 
     endTrip as fbEndTrip, 
+    startTrip as fbStartTrip, // Added startTrip
     type Trip, 
     getActiveTripForDriver, 
     onAuthUserChangedListener,
     type PassengerBookingDetails,
-    getTripById // Import getTripById
+    getTripById 
 } from '@/lib/firebaseService';
 import { useRouter } from 'next/navigation';
 
@@ -39,28 +40,48 @@ interface DisplayPassengerDetails {
   seatId: string;
   seatName: string;
   passengerName: string;
-  // passengerPhone?: string; // Phone is no longer displayed with a call button
 }
 
 function TripCard({ 
     trip, 
     onDelete, 
     onEndTrip,
+    onStartTrip, // Added onStartTrip
     onShowPassengers 
 }: { 
     trip: Trip; 
     onDelete: (tripId: string) => void; 
     onEndTrip: (trip: Trip) => void;
+    onStartTrip: (tripId: string) => void; // Added onStartTrip
     onShowPassengers: (trip: Trip) => void;
 }) {
   const { toast } = useToast();
+  const FIVE_MINUTES_IN_MS = 5 * 60 * 1000;
 
   const handleDelete = () => {
-    onDelete(trip.id);
+    if (trip.status !== 'upcoming') {
+        toast({ title: "لا يمكن إلغاء رحلة ليست قادمة", variant: "destructive"});
+        return;
+    }
+    const tripCreationTime = typeof trip.createdAt === 'number' ? trip.createdAt : parseISO(trip.createdAt as string).getTime();
+    if (Date.now() - tripCreationTime < FIVE_MINUTES_IN_MS) {
+      onDelete(trip.id);
+    } else {
+      toast({
+        title: "لا يمكن إلغاء الرحلة",
+        description: "مر أكثر من 5 دقائق على إنشاء الرحلة. يرجى التواصل مع الدعم للإلغاء.",
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
   };
 
   const handleEndTrip = () => {
     onEndTrip(trip);
+  };
+
+  const handleStartTrip = () => {
+    onStartTrip(trip.id);
   };
 
   const startPointName = JORDAN_GOVERNORATES.find(g => g.id === trip.startPoint)?.name || trip.startPoint;
@@ -84,6 +105,20 @@ function TripCard({
     </svg>
   );
 
+  const now = new Date();
+  const tripDateTime = new Date(trip.dateTime);
+  
+  let expectedArrivalDateTime = null;
+  if (trip.expectedArrivalTime) {
+    const [hours, minutes] = trip.expectedArrivalTime.split(':');
+    expectedArrivalDateTime = new Date(tripDateTime); // Start with trip's date
+    expectedArrivalDateTime.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+  }
+
+  const canStartTrip = trip.status === 'upcoming' && now >= tripDateTime;
+  const canEndTrip = trip.status === 'ongoing' && expectedArrivalDateTime && now >= expectedArrivalDateTime;
+
+
   return (
     <Card className="mb-4 shadow-lg hover:shadow-xl transition-shadow duration-300">
       <CardHeader>
@@ -103,7 +138,7 @@ function TripCard({
         )}
         <div className="flex items-center">
           <CalendarDays className="ms-2 h-4 w-4 text-muted-foreground" />
-          التاريخ: {format(new Date(trip.dateTime), "eeee, d MMMM yyyy - HH:mm", { locale: ar })}
+          التاريخ: {format(tripDateTime, "eeee, d MMMM yyyy - HH:mm", { locale: ar })}
         </div>
         <div className="flex items-center">
           <Clock className="ms-2 h-4 w-4 text-muted-foreground" />
@@ -136,6 +171,27 @@ function TripCard({
       <CardFooter className="flex justify-end space-x-2 space-x-reverse">
         {trip.status === 'upcoming' && (
           <>
+            {canStartTrip && (
+                 <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                        <Button variant="default" size="sm" className="bg-accent hover:bg-accent/90">
+                            <Play className="ms-1 h-4 w-4" /> بدء الرحلة
+                        </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                        <AlertDialogTitle>تأكيد بدء الرحلة</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            هل أنت متأكد أنك تريد بدء هذه الرحلة؟ سيتم تغيير حالتها إلى "جارية".
+                        </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                        <AlertDialogCancel>تراجع</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleStartTrip} className="bg-accent hover:bg-accent/90">تأكيد البدء</AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            )}
             <Button variant="outline" size="sm" asChild>
               <Link href={`/trips/edit/${trip.id}`}>
                 <Edit3 className="ms-1 h-4 w-4" /> تعديل
@@ -151,7 +207,7 @@ function TripCard({
                 <AlertDialogHeader>
                   <AlertDialogTitle>هل أنت متأكد من إلغاء الرحلة؟</AlertDialogTitle>
                   <AlertDialogDescription>
-                    سيتم إشعار الركاب المسجلين بالإلغاء. لا يمكن التراجع عن هذا الإجراء.
+                    سيتم إشعار الركاب المسجلين بالإلغاء. لا يمكن التراجع عن هذا الإجراء إذا مر أكثر من 5 دقائق على إنشاء الرحلة.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -162,7 +218,7 @@ function TripCard({
             </AlertDialog>
           </>
         )}
-         {trip.status === 'ongoing' && (
+         {trip.status === 'ongoing' && canEndTrip && (
              <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="default" size="sm" className="bg-green-600 hover:bg-green-700">
@@ -246,7 +302,6 @@ export default function TripsPage() {
     return () => unsubscribe();
   }, [router, fetchTripsData]);
 
-  // Periodic refresh of the main trips list
   useEffect(() => {
     const intervalId = setInterval(() => {
       if (auth.currentUser) { 
@@ -264,7 +319,7 @@ export default function TripsPage() {
     if (isInitialLoadDialog) {
         setIsLoadingPassengerDetails(true);
     }
-    setPassengerDetailsList([]); // Clear previous list for fresh data
+    setPassengerDetailsList([]); 
 
     try {
       const freshlyFetchedTrip = await getTripById(tripId);
@@ -281,7 +336,6 @@ export default function TripsPage() {
               seatId,
               seatName,
               passengerName: passengerBooking.fullName || 'اسم الراكب غير مسجل',
-              // passengerPhone: passengerBooking.phone, // Phone data available if needed later
             });
           }
         }
@@ -290,7 +344,7 @@ export default function TripsPage() {
     } catch (error) {
       console.error("Error fetching passenger details:", error);
       toast({ title: "خطأ في جلب بيانات الركاب", variant: "destructive" });
-      setPassengerDetailsList([]); // Ensure list is empty on error
+      setPassengerDetailsList([]); 
     } finally {
       if (isInitialLoadDialog) {
         setIsLoadingPassengerDetails(false);
@@ -302,16 +356,15 @@ export default function TripsPage() {
   const showPassengerDetails = useCallback(async (trip: Trip) => {
     setCurrentTripForPassengers(trip);
     setIsPassengerDialogOpen(true);
-    await fetchAndSetPassengerDetails(trip.id, true); // Initial fetch for the dialog
+    await fetchAndSetPassengerDetails(trip.id, true); 
   }, [fetchAndSetPassengerDetails]);
 
-  // Auto-refresh passenger details when dialog is open
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
     if (isPassengerDialogOpen && currentTripForPassengers) {
       intervalId = setInterval(() => {
-        fetchAndSetPassengerDetails(currentTripForPassengers.id, false); // Subsequent fetches, don't show main loader
-      }, 30000); // Refresh every 30 seconds
+        fetchAndSetPassengerDetails(currentTripForPassengers.id, false); 
+      }, 30000); 
     }
     return () => {
       if (intervalId) {
@@ -329,6 +382,17 @@ export default function TripsPage() {
     } catch (error) {
       console.error("Error cancelling trip:", error);
       toast({title: "خطأ في إلغاء الرحلة", variant: "destructive"});
+    }
+  };
+
+  const handleStartTrip = async (tripId: string) => {
+    try {
+      await fbStartTrip(tripId);
+      toast({ title: "تم بدء الرحلة بنجاح!"});
+      fetchTripsData(true);
+    } catch (error: any) {
+      console.error("Error starting trip:", error);
+      toast({ title: "خطأ في بدء الرحلة", description: error.message || "يرجى المحاولة مرة أخرى.", variant: "destructive" });
     }
   };
 
@@ -398,6 +462,7 @@ export default function TripsPage() {
                 trip={trip} 
                 onDelete={handleDeleteTrip} 
                 onEndTrip={handleEndTrip}
+                onStartTrip={handleStartTrip}
                 onShowPassengers={showPassengerDetails} 
             />
           ))}
@@ -424,7 +489,6 @@ export default function TripsPage() {
                       <p className="font-semibold">{passenger.passengerName}</p>
                       <p className="text-sm text-muted-foreground">المقعد: {passenger.seatName}</p>
                     </div>
-                    {/* Call button removed as per request */}
                   </li>
                 ))}
               </ul>
