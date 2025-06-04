@@ -115,6 +115,7 @@ export default function HistoryPage() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [chargeCodeInput, setChargeCodeInput] = useState('');
   const [isChargingWallet, setIsChargingWallet] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const { toast } = useToast();
   const router = useRouter();
 
@@ -138,8 +139,10 @@ export default function HistoryPage() {
 
     const unsubscribe = onAuthUserChangedListener(user => {
         if (user) {
+            setCurrentUserId(user.uid);
             fetchInitialData(user.uid);
         } else {
+            setCurrentUserId(null);
             router.push('/auth/signin');
             setIsLoading(false);
         }
@@ -147,18 +150,46 @@ export default function HistoryPage() {
     return () => unsubscribe();
   }, [router, toast]);
 
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+
+    const pollWalletBalance = async () => {
+      if (currentUserId) {
+        try {
+          const freshProfile = await getUserProfile(currentUserId);
+          if (freshProfile) {
+            setUserProfile(freshProfile);
+          }
+        } catch (error) {
+          console.warn("Polling wallet balance failed:", error);
+          // Optionally, inform the user if polling fails, but be mindful of toast fatigue.
+          // toast({ title: "فشل تحديث الرصيد الدوري", variant: "outline", duration: 3000 });
+        }
+      }
+    };
+
+    if (currentUserId) {
+      intervalId = setInterval(pollWalletBalance, 30000); // Poll every 30 seconds
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [currentUserId]); // Rerun effect if currentUserId changes
+
   const handleChargeWallet = async () => {
     if (!chargeCodeInput.trim()) {
       toast({ title: "الرجاء إدخال كود الشحن", variant: "destructive" });
       return;
     }
-    if (!auth.currentUser) {
+    if (!currentUserId) { // Check against currentUserId state
       toast({ title: "المستخدم غير مسجل الدخول", variant: "destructive" });
       return;
     }
 
     setIsChargingWallet(true);
-    const currentUserId = auth.currentUser.uid;
     const result = await chargeWalletWithCode(currentUserId, chargeCodeInput.trim());
     setIsChargingWallet(false);
 
@@ -169,11 +200,10 @@ export default function HistoryPage() {
     });
 
     if (result.success) {
-      // Wallet charged successfully in DB. Update local UI.
       if (result.newBalance !== undefined) {
-        if (userProfile) { // If local profile exists, update it directly
+        if (userProfile) { 
           setUserProfile(prev => ({ ...prev!, walletBalance: result.newBalance! }));
-        } else { // Local profile is null, fetch the updated profile from DB
+        } else { 
           try {
             const freshProfile = await getUserProfile(currentUserId);
             setUserProfile(freshProfile);
@@ -183,7 +213,7 @@ export default function HistoryPage() {
           }
         }
       }
-      setChargeCodeInput(''); // Clear input on success
+      setChargeCodeInput(''); 
     }
   };
 
@@ -192,7 +222,7 @@ export default function HistoryPage() {
     .filter(trip => trip.status === 'completed' && trip.earnings !== undefined)
     .reduce((sum, trip) => sum + (trip.earnings || 0), 0);
 
-  if (isLoading) {
+  if (isLoading && !userProfile) { // Keep loading if initial load is in progress and no profile yet
     return (
       <div className="flex justify-center items-center h-64">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -244,7 +274,7 @@ export default function HistoryPage() {
                 onChange={(e) => setChargeCodeInput(e.target.value)}
                 disabled={isChargingWallet}
               />
-              <Button onClick={handleChargeWallet} disabled={isChargingWallet || !chargeCodeInput.trim()}>
+              <Button onClick={handleChargeWallet} disabled={isChargingWallet || !chargeCodeInput.trim() || !currentUserId}>
                 {isChargingWallet ? <Loader2 className="animate-spin" /> : <Gift className="ms-2 h-4 w-4" />}
                 شحن الرصيد
               </Button>
@@ -275,3 +305,5 @@ export default function HistoryPage() {
   );
 }
 
+
+    
