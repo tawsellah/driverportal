@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -55,6 +55,7 @@ function CompletedTripCard({ trip }: { trip: Trip }) {
           <Route className="ms-2 h-5 w-5 text-primary" />
           {startPointName} <ArrowLeftShort className="mx-1"/> {destinationName}
           {trip.status === 'cancelled' && <span className="me-auto text-sm font-medium bg-red-100 text-red-700 px-2 py-1 rounded-full">ملغاة</span>}
+          {trip.status === 'completed' && <span className="me-auto text-sm font-medium bg-green-100 text-green-700 px-2 py-1 rounded-full">مكتملة</span>}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
@@ -119,28 +120,28 @@ export default function HistoryPage() {
   const { toast } = useToast();
   const router = useRouter();
 
-  useEffect(() => {
-    const fetchInitialData = async (userId: string) => {
-      setIsLoading(true);
-      try {
-        const [trips, profile] = await Promise.all([
-          getCompletedTripsForDriver(userId),
-          getUserProfile(userId)
-        ]);
-        setCompletedTrips(trips);
-        setUserProfile(profile);
-      } catch (error) {
-        console.error("Error fetching history or profile:", error);
-        toast({ title: "خطأ في تحميل البيانات", variant: "destructive" });
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const fetchInitialData = useCallback(async (userId: string, initialLoad: boolean = true) => {
+    if (initialLoad) setIsLoading(true);
+    try {
+      const [trips, profile] = await Promise.all([
+        getCompletedTripsForDriver(userId),
+        getUserProfile(userId)
+      ]);
+      setCompletedTrips(trips);
+      setUserProfile(profile);
+    } catch (error) {
+      console.error("Error fetching history or profile:", error);
+      if (initialLoad) toast({ title: "خطأ في تحميل البيانات", variant: "destructive" });
+    } finally {
+      if (initialLoad) setIsLoading(false);
+    }
+  }, [toast]);
 
+  useEffect(() => {
     const unsubscribe = onAuthUserChangedListener(user => {
         if (user) {
             setCurrentUserId(user.uid);
-            fetchInitialData(user.uid);
+            fetchInitialData(user.uid, true);
         } else {
             setCurrentUserId(null);
             router.push('/auth/signin');
@@ -148,11 +149,36 @@ export default function HistoryPage() {
         }
     });
     return () => unsubscribe();
-  }, [router, toast]);
+  }, [router, fetchInitialData]);
 
+  // Periodic fetching for completed trips
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
+    const refreshCompletedTrips = async () => {
+      if (currentUserId) {
+        try {
+          const trips = await getCompletedTripsForDriver(currentUserId);
+          setCompletedTrips(trips);
+        } catch (error) {
+          console.warn("Polling completed trips failed:", error);
+          // Optionally, inform the user if polling fails, but be mindful of toast fatigue.
+        }
+      }
+    };
 
+    if (currentUserId) {
+      intervalId = setInterval(refreshCompletedTrips, 60000); // Poll every 60 seconds
+    }
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [currentUserId]);
+
+  // Periodic fetching for wallet balance
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
     const pollWalletBalance = async () => {
       if (currentUserId) {
         try {
@@ -162,8 +188,6 @@ export default function HistoryPage() {
           }
         } catch (error) {
           console.warn("Polling wallet balance failed:", error);
-          // Optionally, inform the user if polling fails, but be mindful of toast fatigue.
-          // toast({ title: "فشل تحديث الرصيد الدوري", variant: "outline", duration: 3000 });
         }
       }
     };
@@ -171,20 +195,19 @@ export default function HistoryPage() {
     if (currentUserId) {
       intervalId = setInterval(pollWalletBalance, 30000); // Poll every 30 seconds
     }
-
     return () => {
       if (intervalId) {
         clearInterval(intervalId);
       }
     };
-  }, [currentUserId]); // Rerun effect if currentUserId changes
+  }, [currentUserId]);
 
   const handleChargeWallet = async () => {
     if (!chargeCodeInput.trim()) {
       toast({ title: "الرجاء إدخال كود الشحن", variant: "destructive" });
       return;
     }
-    if (!currentUserId) { // Check against currentUserId state
+    if (!currentUserId) {
       toast({ title: "المستخدم غير مسجل الدخول", variant: "destructive" });
       return;
     }
@@ -202,7 +225,7 @@ export default function HistoryPage() {
     if (result.success) {
       if (result.newBalance !== undefined) {
         if (userProfile) { 
-          setUserProfile(prev => ({ ...prev!, walletBalance: result.newBalance! }));
+          setUserProfile(prev => prev ? ({ ...prev, walletBalance: result.newBalance! }) : null);
         } else { 
           try {
             const freshProfile = await getUserProfile(currentUserId);
@@ -222,7 +245,7 @@ export default function HistoryPage() {
     .filter(trip => trip.status === 'completed' && trip.earnings !== undefined)
     .reduce((sum, trip) => sum + (trip.earnings || 0), 0);
 
-  if (isLoading && !userProfile) { // Keep loading if initial load is in progress and no profile yet
+  if (isLoading && !userProfile) {
     return (
       <div className="flex justify-center items-center h-64">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -304,6 +327,3 @@ export default function HistoryPage() {
     </div>
   );
 }
-
-
-    
