@@ -116,7 +116,8 @@ function TripCard({
   }
 
   const canStartTrip = trip.status === 'upcoming' && now >= tripDateTime;
-  const canEndTrip = trip.status === 'ongoing' && expectedArrivalDateTime && now >= expectedArrivalDateTime;
+  // The condition for canEndTrip is removed from visibility, but might be useful for other logic if needed.
+  // const canEndTrip = trip.status === 'ongoing' && expectedArrivalDateTime && now >= expectedArrivalDateTime;
 
 
   return (
@@ -218,7 +219,7 @@ function TripCard({
             </AlertDialog>
           </>
         )}
-         {trip.status === 'ongoing' && canEndTrip && (
+         {trip.status === 'ongoing' && (
              <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="default" size="sm" className="bg-green-600 hover:bg-green-700">
@@ -505,3 +506,6 @@ export default function TripsPage() {
     </div>
   );
 }
+
+
+    
