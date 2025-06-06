@@ -383,7 +383,7 @@ export default function ProfilePage() {
           </Button>
           <Button asChild className="w-full mt-2 bg-green-500 hover:bg-green-600 text-white">
             <a href="https://wa.me/0775580440" target="_blank" rel="noopener noreferrer">
-              <span>تواصل مع الدعم (واتساب)</span>
+              <span>تواصل مع الدعم</span>
               <WhatsAppIcon className="h-5 w-5" />
             </a>
           </Button>
@@ -394,5 +394,7 @@ export default function ProfilePage() {
 }
     
 
+
+    
 
     
