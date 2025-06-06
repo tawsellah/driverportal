@@ -238,88 +238,86 @@ export const addTrip = async (driverId: string, tripData: NewTripData): Promise<
 };
 
 export const startTrip = async (tripId: string): Promise<void> => {
-  // Attempt to update in currentTrips first
   const currentTripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
-  const currentSnapshot = await get(currentTripRef);
+  let currentSnapshot = await get(currentTripRef);
+  let tripToStart: Trip | null = currentSnapshot.exists() ? currentSnapshot.val() as Trip : null;
+  let originalPath = `${CURRENT_TRIPS_PATH}/${tripId}`;
 
-  if (currentSnapshot.exists()) {
-    const trip = currentSnapshot.val() as Trip;
-    if (trip.status === 'upcoming') {
-      await update(currentTripRef, { status: 'ongoing', updatedAt: serverTimestamp() });
-      return;
-    } else {
-      console.warn("Trip in currentTrips is not upcoming, status:", trip.status);
-      // Potentially throw error or handle as needed if strict 'upcoming' start is required
-    }
-  }
-
-  // If not found or not updated in currentTrips, check finishedTrips (for reactivated trips)
-  // This assumes the tripId is globally unique and driverId is known or part of trip data if needed
-  const finishedTripsSnapshot = await get(ref(databaseInternal, FINISHED_TRIPS_PATH));
-  if (finishedTripsSnapshot.exists()) {
-    let driverIdForTrip: string | null = null;
-    let tripPathInFinished: string | null = null;
-    let tripToReactivate: Trip | null = null;
-
-    finishedTripsSnapshot.forEach(driverNode => {
-      if (driverNode.hasChild(tripId)) {
-        driverIdForTrip = driverNode.key;
-        tripToReactivate = driverNode.child(tripId).val() as Trip;
-        tripPathInFinished = `${FINISHED_TRIPS_PATH}/${driverIdForTrip}/${tripId}`;
-        return true; // break loop
-      }
-    });
-
-    if (tripToReactivate && driverIdForTrip && tripPathInFinished) {
-      if (tripToReactivate.status === 'upcoming' || tripToReactivate.status === 'completed' || tripToReactivate.status === 'cancelled') { // Allow starting if it was upcoming, or "reactivating"
-        const reactivatedTripData: Trip = {
-          ...tripToReactivate,
-          status: 'ongoing',
-          updatedAt: serverTimestamp(),
-        };
-        // Move to currentTrips
-        await set(ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`), reactivatedTripData);
-        // Remove from finishedTrips
-        await remove(ref(databaseInternal, tripPathInFinished));
-        return;
-      } else {
-         console.error("Trip in finishedTrips cannot be started. Current status:", tripToReactivate.status);
-         throw new Error("الرحلة في السجل ليست قادمة ولا يمكن بدؤها.");
-      }
-    }
+  if (tripToStart && tripToStart.status === 'upcoming') {
+    await update(currentTripRef, { status: 'ongoing', updatedAt: serverTimestamp() });
+    return;
   }
   
-  // If trip was not found or couldn't be started in either location
+  // If not in currentTrips or not upcoming, check finishedTrips
+  if (!tripToStart || tripToStart.status !== 'upcoming') {
+    const finishedTripsSnapshot = await get(ref(databaseInternal, FINISHED_TRIPS_PATH));
+    if (finishedTripsSnapshot.exists()) {
+      let driverIdForTrip: string | null = null;
+      let foundTripInFinished: Trip | null = null;
+
+      finishedTripsSnapshot.forEach(driverNode => {
+        if (driverNode.hasChild(tripId)) {
+          driverIdForTrip = driverNode.key;
+          foundTripInFinished = driverNode.child(tripId).val() as Trip;
+          return true; 
+        }
+      });
+
+      if (foundTripInFinished && driverIdForTrip && 
+          (foundTripInFinished.status === 'upcoming' || foundTripInFinished.status === 'completed' || foundTripInFinished.status === 'cancelled')) {
+        tripToStart = foundTripInFinished;
+        originalPath = `${FINISHED_TRIPS_PATH}/${driverIdForTrip}/${tripId}`;
+      } else if (foundTripInFinished) {
+        console.warn("Trip in finishedTrips cannot be started. Current status:", foundTripInFinished.status);
+        throw new Error("الرحلة في السجل ليست قادمة ولا يمكن بدؤها.");
+      }
+    }
+  }
+
+  if (tripToStart) {
+    const reactivatedTripData: Trip = {
+      ...tripToStart,
+      status: 'ongoing',
+      updatedAt: serverTimestamp(),
+    };
+    // Move to currentTrips (or update if it was already there but in a non-upcoming state)
+    await set(ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`), reactivatedTripData);
+    // If it was originally in finishedTrips, remove it from there
+    if (originalPath.startsWith(FINISHED_TRIPS_PATH)) {
+      await remove(ref(databaseInternal, originalPath));
+    }
+    return;
+  }
+  
   console.error("Trip not found or cannot be started:", tripId);
   throw new Error("لم يتم العثور على الرحلة أو لا يمكن بدؤها.");
 };
 
 export const updateTrip = async (tripId: string, updates: Partial<Trip>): Promise<void> => {
-  const tripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
-   const snapshot = await get(tripRef);
-  if (snapshot.exists()) {
-    await update(tripRef, { ...updates, updatedAt: serverTimestamp() });
+  const currentTripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
+  const currentSnapshot = await get(currentTripRef);
+
+  if (currentSnapshot.exists()) {
+    await update(currentTripRef, { ...updates, updatedAt: serverTimestamp() });
   } else {
-    // If not in currentTrips, check if it's a reactivated trip in finishedTrips that needs updating there
-    // This scenario is less common for general updates but good for robustness
     const finishedTripsSnapshot = await get(ref(databaseInternal, FINISHED_TRIPS_PATH));
-    if(finishedTripsSnapshot.exists()){
-        let driverIdForTrip: string | null = null;
-        let tripPathInFinished: string | null = null;
-        finishedTripsSnapshot.forEach((driverNode) => {
-            if (driverNode.hasChild(tripId)) {
-                driverIdForTrip = driverNode.key;
-                tripPathInFinished = `${FINISHED_TRIPS_PATH}/${driverIdForTrip}/${tripId}`;
-                return true;
-            }
-        });
-        if (tripPathInFinished) {
-            await update(ref(databaseInternal, tripPathInFinished), { ...updates, updatedAt: serverTimestamp() });
-            // If status is updated to 'upcoming' or 'ongoing', it should be moved. This is complex for a generic update.
-            // For now, just update in place. Move logic is better handled in startTrip or a dedicated "reactivateTrip" function.
-        } else {
-            console.warn(`Trip ${tripId} not found for update.`);
+    if (finishedTripsSnapshot.exists()) {
+      let driverIdForTrip: string | null = null;
+      let tripPathInFinished: string | null = null;
+      finishedTripsSnapshot.forEach((driverNode) => {
+        if (driverNode.hasChild(tripId)) {
+          driverIdForTrip = driverNode.key;
+          tripPathInFinished = `${FINISHED_TRIPS_PATH}/${driverIdForTrip}/${tripId}`;
+          return true;
         }
+      });
+      if (tripPathInFinished) {
+        await update(ref(databaseInternal, tripPathInFinished), { ...updates, updatedAt: serverTimestamp() });
+      } else {
+        console.warn(`Trip ${tripId} not found for update in currentTrips or finishedTrips.`);
+      }
+    } else {
+       console.warn(`Trip ${tripId} not found for update in currentTrips and finishedTrips node does not exist.`);
     }
   }
 };
@@ -363,7 +361,7 @@ export const getTripById = async (tripId: string): Promise<Trip | null> => {
         let foundTrip: Trip | null = null;
         finishedTripsSnapshot.forEach((driverNode) => {
             const driverTrips = driverNode.val();
-            if(driverTrips[tripId]){
+            if(driverTrips && driverTrips[tripId]){ // Check if driverTrips itself is not null
                 foundTrip = driverTrips[tripId] as Trip;
                 return true; 
             }
@@ -371,25 +369,6 @@ export const getTripById = async (tripId: string): Promise<Trip | null> => {
         if(foundTrip) return foundTrip;
     }
     return null;
-};
-
-
-export const getActiveTripForDriver = async (driverId: string): Promise<Trip | null> => {
-  const activeAndUpcomingTrips = await getUpcomingAndOngoingTripsForDriver(driverId);
-
-  if (activeAndUpcomingTrips.length === 0) {
-    return null;
-  }
-
-  // Prioritize ongoing trip
-  const ongoingTrip = activeAndUpcomingTrips.find(trip => trip.status === 'ongoing');
-  if (ongoingTrip) {
-    return ongoingTrip;
-  }
-
-  // If no ongoing, return the first upcoming trip (already sorted by dateTime)
-  const upcomingTrip = activeAndUpcomingTrips.find(trip => trip.status === 'upcoming');
-  return upcomingTrip || null;
 };
 
 export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Promise<Trip[]> => {
@@ -407,23 +386,17 @@ export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Pro
     });
   }
 
-  // 2. Fetch from finishedTrips for the driver and check for reactivated trips
+  // 2. Fetch from finishedTrips for the driver and check for "reactivated" trips
   const finishedDriverTripsRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${driverId}`);
   const finishedSnapshot = await get(finishedDriverTripsRef);
   if (finishedSnapshot.exists()) {
     finishedSnapshot.forEach((childSnapshot) => {
       const trip = childSnapshot.val() as Trip;
-      // If a trip in finishedTrips is 'upcoming' or 'ongoing'
       if (trip.driverId === driverId && (trip.status === 'upcoming' || trip.status === 'ongoing')) {
         // Add to map. If it was already added from currentTrips, the one from currentTrips takes precedence.
-        // However, for reactivated trips, it shouldn't be in currentTrips yet if only status was changed in finishedTrips.
-        // This logic ensures it's included if it's "active" in finishedTrips.
         if (!allActiveTripsMap.has(trip.id)) {
             allActiveTripsMap.set(trip.id, trip);
         }
-        // If an admin "reactivates" a trip by changing status in finishedTrips
-        // AND moves it to currentTrips, this logic is fine.
-        // If they ONLY change status in finishedTrips, this will pick it up.
       }
     });
   }
@@ -431,6 +404,23 @@ export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Pro
   const trips = Array.from(allActiveTripsMap.values());
   // Sort by dateTime in ascending order (earliest first)
   return trips.sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
+};
+
+
+export const getActiveTripForDriver = async (driverId: string): Promise<Trip | null> => {
+  const activeAndUpcomingTrips = await getUpcomingAndOngoingTripsForDriver(driverId);
+
+  if (activeAndUpcomingTrips.length === 0) {
+    return null;
+  }
+  // Prioritize ongoing trip
+  const ongoingTrip = activeAndUpcomingTrips.find(trip => trip.status === 'ongoing');
+  if (ongoingTrip) {
+    return ongoingTrip;
+  }
+  // If no ongoing, return the first upcoming trip (already sorted by dateTime)
+  const upcomingTrip = activeAndUpcomingTrips.find(trip => trip.status === 'upcoming');
+  return upcomingTrip || null; // Should always find one if list is not empty
 };
 
 
@@ -448,7 +438,11 @@ export const getCompletedTripsForDriver = async (driverId: string): Promise<Trip
     });
   }
   // Sort by updatedAt in descending order (most recent first) on the client-side
-  return trips.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  return trips.sort((a, b) => {
+    const timeA = typeof a.updatedAt === 'object' ? (a.updatedAt as any)._seconds || 0 : (a.updatedAt || 0);
+    const timeB = typeof b.updatedAt === 'object' ? (b.updatedAt as any)._seconds || 0 : (b.updatedAt || 0);
+    return timeB - timeA;
+  });
 };
 
 
@@ -468,23 +462,20 @@ export const endTrip = async (tripToEnd: Trip, earnings: number): Promise<void> 
   const finishedTripRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${tripToEnd.driverId}/${tripToEnd.id}`);
   const originalTripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripToEnd.id}`);
 
-  // Use a transaction to update walletBalance and tripsCount together
   const userProfileRef = ref(databaseInternal, `users/${tripToEnd.driverId}`);
-  const transactionResult = await runTransaction(userProfileRef, (currentProfile: UserProfile | null) => {
-    if (currentProfile) {
-      currentProfile.tripsCount = (currentProfile.tripsCount || 0) + 1;
-      currentProfile.walletBalance = (currentProfile.walletBalance || 0) + earnings;
-      currentProfile.updatedAt = serverTimestamp();
-    }
-    return currentProfile;
-  });
-
-  if (!transactionResult.committed) {
-    console.error(`Failed to update user profile for driver ${tripToEnd.driverId} during endTrip.`);
-    // Decide if you want to throw an error or proceed with moving the trip
-    // For now, we'll proceed to move the trip even if profile update fails,
-    // but this could lead to inconsistencies if not handled.
-    // throw new Error("Failed to update driver's profile and wallet.");
+  try {
+    await runTransaction(userProfileRef, (currentProfile: UserProfile | null) => {
+      if (currentProfile) {
+        currentProfile.tripsCount = (currentProfile.tripsCount || 0) + 1;
+        currentProfile.walletBalance = (currentProfile.walletBalance || 0) + earnings;
+        currentProfile.updatedAt = serverTimestamp();
+      }
+      return currentProfile;
+    });
+  } catch (error) {
+     console.error(`Transaction failed for updating user profile ${tripToEnd.driverId}: `, error);
+     // Decide if you want to throw an error or proceed. For now, proceeding.
+     // throw new Error("Failed to update driver's profile and wallet during endTrip.");
   }
   
   await set(finishedTripRef, finishedTripData);
@@ -553,3 +544,13 @@ export const addStopsToRoute = async (startPointId: string, destinationId: strin
   console.log(`Stops for route ${routeKey} updated:`, uniqueStopsArray);
 };
 
+// --- App Settings Service ---
+export const getSupportContactNumberFromDb = async (): Promise<string | null> => {
+  const settingRef = ref(databaseInternal, 'support/contactPhoneNumber/contact');
+  const snapshot = await get(settingRef);
+  if (snapshot.exists()) {
+    return snapshot.val() as string;
+  }
+  console.warn("Support contact phone number not found at 'support/contactPhoneNumber/contact'");
+  return null;
+};

@@ -17,7 +17,12 @@ import { format } from 'date-fns';
 import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
-import { getUserProfile, updateUserProfile, type UserProfile } from '@/lib/firebaseService'; 
+import { 
+    getUserProfile, 
+    updateUserProfile, 
+    type UserProfile,
+    getSupportContactNumberFromDb // Import the new function
+} from '@/lib/firebaseService'; 
 import { setAuthStatus } from '@/lib/storage';
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -36,24 +41,20 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 
 async function uploadFileToImageKit(file: File): Promise<string | null> {
   try {
-    // 1. Get authentication parameters from your API route
     const authResponse = await fetch('/api/imagekit-auth');
     if (!authResponse.ok) {
       throw new Error('Failed to get ImageKit auth params');
     }
     const authParams = await authResponse.json();
 
-    // 2. Prepare FormData for ImageKit upload
     const formData = new FormData();
     formData.append('file', file);
     formData.append('fileName', file.name);
-    formData.append('publicKey', process.env.NEXT_PUBLIC_IMAGEKIT_PUBLIC_KEY || "public_IfRvA+ieL0CZzBuuO9i9cFceLn8="); // Use your public key
+    formData.append('publicKey', process.env.NEXT_PUBLIC_IMAGEKIT_PUBLIC_KEY || "public_IfRvA+ieL0CZzBuuO9i9cFceLn8=");
     formData.append('signature', authParams.signature);
     formData.append('expire', authParams.expire);
     formData.append('token', authParams.token);
-    // formData.append('folder', '/user_profiles/'); // Optional: specify a folder
 
-    // 3. Upload to ImageKit
     const uploadResponse = await fetch('https://upload.imagekit.io/api/v1/files/upload', {
       method: 'POST',
       body: formData,
@@ -66,7 +67,7 @@ async function uploadFileToImageKit(file: File): Promise<string | null> {
     }
 
     const uploadResult = await uploadResponse.json();
-    return uploadResult.url; // URL of the uploaded image
+    return uploadResult.url;
   } catch (error) {
     console.error('Error uploading to ImageKit:', error);
     return null;
@@ -88,6 +89,8 @@ export default function ProfilePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingProfile, setIsFetchingProfile] = useState(true);
   const [newPhotoFile, setNewPhotoFile] = useState<File | null>(null);
+  const [supportPhoneNumber, setSupportPhoneNumber] = useState<string | null>(null);
+  const [isLoadingSupportNumber, setIsLoadingSupportNumber] = useState(true);
 
 
   const { control, handleSubmit, register, reset, watch, formState: { errors } } = useForm<ProfileFormValues>({
@@ -104,26 +107,42 @@ export default function ProfilePage() {
   });
 
   useEffect(() => {
-    const fetchProfile = async () => {
+    const fetchProfileAndSupportNumber = async () => {
       setIsFetchingProfile(true);
+      setIsLoadingSupportNumber(true);
       const currentUser = auth.currentUser;
       if (currentUser) {
-        const profile = await getUserProfile(currentUser.uid);
-        setUserProfile(profile);
-        if (profile) {
-          reset({
-            fullName: profile.fullName,
-            phone: profile.phone,
-            paymentMethods: profile.paymentMethods || { cash: true, click: false, clickCode: '' },
-          });
+        try {
+            const profile = await getUserProfile(currentUser.uid);
+            setUserProfile(profile);
+            if (profile) {
+              reset({
+                fullName: profile.fullName,
+                phone: profile.phone,
+                paymentMethods: profile.paymentMethods || { cash: true, click: false, clickCode: '' },
+              });
+            }
+        } catch (error) {
+            console.error("Error fetching user profile:", error);
+            toast({ title: "خطأ في تحميل الملف الشخصي", variant: "destructive" });
         }
       } else {
         toast({ title: "لم يتم العثور على الملف الشخصي أو المستخدم غير مسجل", variant: "destructive" });
         router.push('/auth/signin');
       }
       setIsFetchingProfile(false);
+
+      try {
+        const number = await getSupportContactNumberFromDb();
+        setSupportPhoneNumber(number);
+      } catch (error) {
+        console.error("Error fetching support phone number:", error);
+        setSupportPhoneNumber(null);
+      } finally {
+        setIsLoadingSupportNumber(false);
+      }
     };
-    fetchProfile();
+    fetchProfileAndSupportNumber();
   }, [reset, toast, router]);
 
   const paymentMethodsWatched = watch("paymentMethods");
@@ -143,10 +162,8 @@ export default function ProfilePage() {
       const uploadedUrl = await uploadFileToImageKit(newPhotoFile);
       if (uploadedUrl) {
         actualUploadedPhotoUrl = uploadedUrl;
-        console.log("Successfully uploaded to ImageKit, URL:", actualUploadedPhotoUrl);
       } else {
         toast({ title: "فشل رفع الصورة", description: "حدث خطأ أثناء رفع الصورة الشخصية. تم حفظ البيانات الأخرى.", variant: "destructive" });
-        // Continue with other profile updates even if image upload fails
       }
     }
 
@@ -158,20 +175,18 @@ export default function ProfilePage() {
         click: data.paymentMethods?.click || false,
         clickCode: data.paymentMethods?.click ? (data.paymentMethods?.clickCode || '') : '',
       },
-      idPhotoUrl: actualUploadedPhotoUrl, // Save the actual URL or old URL if upload failed
+      idPhotoUrl: actualUploadedPhotoUrl,
     };
 
     try {
       await updateUserProfile(auth.currentUser.uid, updates);
       const refreshedProfile = await getUserProfile(auth.currentUser.uid);
-      console.log("[DEBUG] Refreshed profile idPhotoUrl after save:", refreshedProfile?.idPhotoUrl); 
       setUserProfile(refreshedProfile); 
        if (refreshedProfile) {
           reset({ 
             fullName: refreshedProfile.fullName,
             phone: refreshedProfile.phone,
             paymentMethods: refreshedProfile.paymentMethods || { cash: true, click: false, clickCode: '' },
-            // idPhotoUrl is not part of form values, it's part of userProfile state
           });
         }
       setNewPhotoFile(null); 
@@ -381,10 +396,29 @@ export default function ProfilePage() {
            <Button onClick={handleSignOut} variant="destructive" className="w-full mt-2">
             <LogOut className="ms-2 h-4 w-4" /> تسجيل الخروج
           </Button>
-          <Button asChild className="w-full mt-2 bg-green-500 hover:bg-green-600 text-white">
-            <a href="https://wa.me/0775580440" target="_blank" rel="noopener noreferrer">
-              <span>تواصل مع الدعم</span>
-              <WhatsAppIcon className="h-5 w-5" />
+          <Button
+            asChild
+            className="w-full mt-2 bg-green-500 hover:bg-green-600 text-white"
+            disabled={isLoadingSupportNumber || !supportPhoneNumber}
+            onClick={() => {
+              if (!supportPhoneNumber && !isLoadingSupportNumber) {
+                toast({ title: "رقم الدعم غير متوفر حالياً", variant: "destructive" });
+              }
+            }}
+          >
+            <a
+              href={supportPhoneNumber ? `https://wa.me/${supportPhoneNumber.replace(/^\+/, '')}` : '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {isLoadingSupportNumber ? (
+                <Loader2 className="animate-spin h-5 w-5" />
+              ) : (
+                <>
+                  <span>تواصل مع الدعم</span>
+                  <WhatsAppIcon className="h-5 w-5" />
+                </>
+              )}
             </a>
           </Button>
         </CardFooter>
