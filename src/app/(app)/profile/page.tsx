@@ -407,7 +407,7 @@ export default function ProfilePage() {
             }}
           >
             <a
-              href={supportPhoneNumber ? `https://wa.me/${supportPhoneNumber.replace(/^\+/, '')}` : '#'}
+              href={supportPhoneNumber ? `https://wa.me/${String(supportPhoneNumber).replace(/^\+/, '')}` : '#'}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -432,3 +432,4 @@ export default function ProfilePage() {
     
 
     
+
