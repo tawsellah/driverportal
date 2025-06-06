@@ -73,6 +73,12 @@ async function uploadFileToImageKit(file: File): Promise<string | null> {
   }
 }
 
+const WhatsAppIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" {...props}>
+    <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm0 18.09c-1.5 0-2.96-.36-4.24-1.05L6.36 19.6l-1.02.27.27-1.02 1.44-1.44a8.08 8.08 0 0 1-1.16-4.49c0-4.53 3.69-8.21 8.21-8.21s8.21 3.69 8.21 8.21-3.69 8.21-8.21 8.21zm4.49-5.83c-.28-.14-1.64-.81-1.9-.9s-.45-.14-.64.14-.72.9-.88 1.08-.32.18-.59.06c-.28-.12-1.17-.43-2.23-1.38-.83-.73-1.38-1.63-1.54-1.9s-.17-.28-.07-.36c.08-.1.22-.22.3-.3.09-.09.12-.14.18-.24.06-.1.03-.18-.01-.32s-.64-1.54-.88-2.1c-.24-.58-.48-.48-.64-.48h-.4c-.14 0-.38.06-.59.32s-.81.78-.81 1.9c0 1.12.83 2.2 1.02 2.4s1.64 2.51 3.98 3.53c.55.24.93.38 1.25.48.52.16.99.14 1.37.08.42-.06 1.25-.51 1.42-.99.18-.49.18-.9.12-.99s-.22-.14-.49-.28z"/>
+  </svg>
+);
+
 
 export default function ProfilePage() {
   const { toast } = useToast();
@@ -375,10 +381,18 @@ export default function ProfilePage() {
            <Button onClick={handleSignOut} variant="destructive" className="w-full mt-2">
             <LogOut className="ms-2 h-4 w-4" /> تسجيل الخروج
           </Button>
+          <Button asChild className="w-full mt-2 bg-green-500 hover:bg-green-600 text-white">
+            <a href="https://wa.me/0775580440" target="_blank" rel="noopener noreferrer">
+              <span>تواصل مع الدعم (واتساب)</span>
+              <WhatsAppIcon className="h-5 w-5" />
+            </a>
+          </Button>
         </CardFooter>
       </Card>
     </div>
   );
 }
+    
+
 
     
