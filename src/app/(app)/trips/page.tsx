@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { Plus, Edit3, Users, Route, MapPin, CalendarDays, Clock, Armchair, DollarSign, Loader2, AlertTriangle, Ban, CheckCircle, Play } from 'lucide-react'; // Added Play icon
+import { Plus, Edit3, Users, Route, MapPin, CalendarDays, Clock, Armchair, DollarSign, Loader2, AlertTriangle, Ban, CheckCircle, Play } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -27,7 +27,7 @@ import {
     getUpcomingAndOngoingTripsForDriver, 
     deleteTrip as fbDeleteTrip, 
     endTrip as fbEndTrip, 
-    startTrip as fbStartTrip, // Added startTrip
+    startTrip as fbStartTrip,
     type Trip, 
     getActiveTripForDriver, 
     onAuthUserChangedListener,
@@ -46,13 +46,13 @@ function TripCard({
     trip, 
     onDelete, 
     onEndTrip,
-    onStartTrip, // Added onStartTrip
+    onStartTrip,
     onShowPassengers 
 }: { 
     trip: Trip; 
     onDelete: (tripId: string) => void; 
     onEndTrip: (trip: Trip) => void;
-    onStartTrip: (tripId: string) => void; // Added onStartTrip
+    onStartTrip: (tripId: string) => void;
     onShowPassengers: (trip: Trip) => void;
 }) {
   const { toast } = useToast();
@@ -63,7 +63,8 @@ function TripCard({
         toast({ title: "لا يمكن إلغاء رحلة ليست قادمة", variant: "destructive"});
         return;
     }
-    const tripCreationTime = typeof trip.createdAt === 'number' ? trip.createdAt : parseISO(trip.createdAt as string).getTime();
+    const tripCreationTime = typeof trip.createdAt === 'object' && trip.createdAt?.seconds ? trip.createdAt.seconds * 1000 : (typeof trip.createdAt === 'number' ? trip.createdAt : parseISO(trip.createdAt as string).getTime());
+
     if (Date.now() - tripCreationTime < FIVE_MINUTES_IN_MS) {
       onDelete(trip.id);
     } else {
@@ -108,17 +109,7 @@ function TripCard({
   const now = new Date();
   const tripDateTime = new Date(trip.dateTime);
   
-  let expectedArrivalDateTime = null;
-  if (trip.expectedArrivalTime) {
-    const [hours, minutes] = trip.expectedArrivalTime.split(':');
-    expectedArrivalDateTime = new Date(tripDateTime); // Start with trip's date
-    expectedArrivalDateTime.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
-  }
-
   const canStartTrip = trip.status === 'upcoming' && now >= tripDateTime;
-  // The condition for canEndTrip is removed from visibility, but might be useful for other logic if needed.
-  // const canEndTrip = trip.status === 'ongoing' && expectedArrivalDateTime && now >= expectedArrivalDateTime;
-
 
   return (
     <Card className="mb-4 shadow-lg hover:shadow-xl transition-shadow duration-300">
@@ -170,29 +161,29 @@ function TripCard({
         </div>
       </CardContent>
       <CardFooter className="flex justify-end space-x-2 space-x-reverse">
-        {trip.status === 'upcoming' && (
+        {trip.status === 'upcoming' && canStartTrip && (
+            <AlertDialog>
+                <AlertDialogTrigger asChild>
+                    <Button variant="default" size="sm" className="bg-accent hover:bg-accent/90">
+                        <Play className="ms-1 h-4 w-4" /> بدء الرحلة
+                    </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                    <AlertDialogTitle>تأكيد بدء الرحلة</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        هل أنت متأكد أنك تريد بدء هذه الرحلة؟ سيتم تغيير حالتها إلى "جارية".
+                    </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                    <AlertDialogCancel>تراجع</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleStartTrip} className="bg-accent hover:bg-accent/90">تأكيد البدء</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        )}
+        {trip.status === 'upcoming' && ( // Edit and Cancel only for upcoming
           <>
-            {canStartTrip && (
-                 <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                        <Button variant="default" size="sm" className="bg-accent hover:bg-accent/90">
-                            <Play className="ms-1 h-4 w-4" /> بدء الرحلة
-                        </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                        <AlertDialogHeader>
-                        <AlertDialogTitle>تأكيد بدء الرحلة</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            هل أنت متأكد أنك تريد بدء هذه الرحلة؟ سيتم تغيير حالتها إلى "جارية".
-                        </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                        <AlertDialogCancel>تراجع</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleStartTrip} className="bg-accent hover:bg-accent/90">تأكيد البدء</AlertDialogAction>
-                        </AlertDialogFooter>
-                    </AlertDialogContent>
-                </AlertDialog>
-            )}
             <Button variant="outline" size="sm" asChild>
               <Link href={`/trips/edit/${trip.id}`}>
                 <Edit3 className="ms-1 h-4 w-4" /> تعديل
@@ -267,11 +258,42 @@ export default function TripsPage() {
     }
     const currentUser = auth.currentUser;
     if (currentUser) {
+      let anUpcomingTripWasAutoStarted = false;
       try {
         const loadedTrips = await getUpcomingAndOngoingTripsForDriver(currentUser.uid);
-        setTrips(loadedTrips);
+        let tripsToUpdateLocally = [...loadedTrips];
+
+        const now = new Date();
+        for (const trip of loadedTrips) {
+          if (trip.status === 'upcoming') {
+            const tripDateTime = new Date(trip.dateTime);
+            if (now >= tripDateTime) {
+              try {
+                await fbStartTrip(trip.id); // This updates DB
+                toast({
+                  title: "تم بدء الرحلة تلقائياً",
+                  description: `بدأت رحلتك إلى ${JORDAN_GOVERNORATES.find(g => g.id === trip.destination)?.name || trip.destination}.`,
+                });
+                anUpcomingTripWasAutoStarted = true;
+                tripsToUpdateLocally = tripsToUpdateLocally.map(t => 
+                  t.id === trip.id ? { ...t, status: 'ongoing' as const } : t
+                );
+              } catch (startError: any) {
+                console.error(`Error auto-starting trip ${trip.id}:`, startError);
+                // Optionally, toast if it's not a 'trip already ongoing or not found' type error
+                if (startError.message && !startError.message.toLowerCase().includes("upcoming") && !startError.message.toLowerCase().includes("found")) {
+                    toast({ title: "خطأ في البدء التلقائي", description: startError.message, variant: "destructive"});
+                }
+              }
+            }
+          }
+        }
+        
+        setTrips(tripsToUpdateLocally);
+
         const activeTrip = await getActiveTripForDriver(currentUser.uid);
         setCanCreateTrip(!activeTrip);
+
       } catch (error) {
         console.error("Error fetching trip data:", error);
         toast({ title: "خطأ في جلب بيانات الرحلات", description: "الرجاء المحاولة مرة أخرى لاحقاً.", variant: "destructive" });
@@ -390,7 +412,7 @@ export default function TripsPage() {
     try {
       await fbStartTrip(tripId);
       toast({ title: "تم بدء الرحلة بنجاح!"});
-      fetchTripsData(true);
+      fetchTripsData(true); // Re-fetch to update UI and potentially auto-start other trips
     } catch (error: any) {
       console.error("Error starting trip:", error);
       toast({ title: "خطأ في بدء الرحلة", description: error.message || "يرجى المحاولة مرة أخرى.", variant: "destructive" });
@@ -425,7 +447,7 @@ export default function TripsPage() {
     );
   }
   
-  const destinationName = currentTripForPassengers?.destination 
+  const destinationNameDialog = currentTripForPassengers?.destination 
     ? (JORDAN_GOVERNORATES.find(g => g.id === currentTripForPassengers.destination)?.name || currentTripForPassengers.destination)
     : '';
 
@@ -473,7 +495,7 @@ export default function TripsPage() {
       <Dialog open={isPassengerDialogOpen} onOpenChange={setIsPassengerDialogOpen}>
         <DialogContent className="sm:max-w-[425px] md:max-w-lg">
           <DialogHeader>
-            <DialogTitle>ركاب الرحلة إلى {destinationName}</DialogTitle>
+            <DialogTitle>ركاب الرحلة إلى {destinationNameDialog}</DialogTitle>
           </DialogHeader>
           {isLoadingPassengerDetails ? (
             <div className="flex justify-center items-center h-32">
@@ -506,6 +528,5 @@ export default function TripsPage() {
     </div>
   );
 }
-
 
     
