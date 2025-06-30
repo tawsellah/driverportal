@@ -28,15 +28,15 @@ const signUpSchema = z.object({
   phone: z.string().regex(/^07[789]\d{7}$/, { message: "رقم هاتف أردني غير صالح (مثال: 0791234567)." }),
   password: z.string().min(6, { message: "كلمة المرور يجب أن تكون 6 أحرف على الأقل." }),
   idNumber: z.string().regex(/^[A-Z0-9]{8}$/, { message: "رقم الهوية يجب أن يتكون من 8 أحرف إنجليزية كبيرة وأرقام." }),
-  idPhoto: z.instanceof(FileList).refine(files => files && files.length > 0, { message: "صورة الهوية مطلوبة." }),
+  idPhoto: z.any().refine(files => files && files.length > 0, { message: "صورة الهوية مطلوبة." }),
   licenseNumber: z.string().regex(/^[0-9]{8}$/, { message: "رقم الرخصة يجب أن يتكون من 8 أرقام." }),
   licenseExpiry: z.string().min(1, { message: "تاريخ انتهاء الرخصة مطلوب." }),
-  licensePhoto: z.instanceof(FileList).refine(files => files && files.length > 0, { message: "صورة الرخصة مطلوبة." }),
+  licensePhoto: z.any().refine(files => files && files.length > 0, { message: "صورة الرخصة مطلوبة." }),
   vehicleType: z.string().min(1, { message: "نوع المركبة مطلوب." }),
   year: z.string().min(4, { message: "سنة الصنع مطلوبة (مثال: 2020)." }).max(4),
   color: z.string().min(1, { message: "لون المركبة مطلوب." }),
   plateNumber: z.string().min(1, { message: "رقم اللوحة مطلوب." }),
-  vehiclePhoto: z.instanceof(FileList).refine(files => files && files.length > 0, { message: "صورة المركبة مطلوبة." }),
+  vehiclePhoto: z.any().refine(files => files && files.length > 0, { message: "صورة المركبة مطلوبة." }),
 });
 
 type SignUpFormValues = z.infer<typeof signUpSchema>;
@@ -300,4 +300,6 @@ export default function SignUpPage() {
     </div>
   );
 }
+    
+
     
