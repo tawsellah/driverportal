@@ -18,6 +18,8 @@ export interface PassengerBookingDetails {
   phone: string;
   fullName: string; 
   bookedAt: any; 
+  paymentMethod?: string; // e.g., "cash", "click"
+  dropOffPoint?: string; // e.g., "Stop Name 1"
 }
 
 export interface UserProfileTopUpCode {

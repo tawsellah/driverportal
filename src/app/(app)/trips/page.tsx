@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { Plus, Edit3, Users, Route, MapPin, CalendarDays, Clock, Armchair, DollarSign, Loader2, AlertTriangle, Ban, CheckCircle, Play } from 'lucide-react';
+import { Plus, Edit3, Users, Route, MapPin, CalendarDays, Clock, Armchair, DollarSign, Loader2, AlertTriangle, Ban, CheckCircle, Play, Wallet } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -40,6 +40,8 @@ interface DisplayPassengerDetails {
   seatId: string;
   seatName: string;
   passengerName: string;
+  paymentMethod?: string;
+  dropOffPoint?: string;
 }
 
 function TripCard({ 
@@ -57,14 +59,18 @@ function TripCard({
 }) {
   const { toast } = useToast();
   const FIVE_MINUTES_IN_MS = 5 * 60 * 1000;
+  const TEN_MINUTES_IN_MS = 10 * 60 * 1000;
+
+  const tripCreationTime = typeof trip.createdAt === 'object' && trip.createdAt?.seconds ? trip.createdAt.seconds * 1000 : (typeof trip.createdAt === 'number' ? trip.createdAt : parseISO(trip.createdAt as string).getTime());
+  
+  const isEditable = Date.now() - tripCreationTime < TEN_MINUTES_IN_MS;
 
   const handleDelete = () => {
     if (trip.status !== 'upcoming') {
         toast({ title: "لا يمكن إلغاء رحلة ليست قادمة", variant: "destructive"});
         return;
     }
-    const tripCreationTime = typeof trip.createdAt === 'object' && trip.createdAt?.seconds ? trip.createdAt.seconds * 1000 : (typeof trip.createdAt === 'number' ? trip.createdAt : parseISO(trip.createdAt as string).getTime());
-
+    
     if (Date.now() - tripCreationTime < FIVE_MINUTES_IN_MS) {
       onDelete(trip.id);
     } else {
@@ -184,11 +190,17 @@ function TripCard({
         )}
         {trip.status === 'upcoming' && ( // Edit and Cancel only for upcoming
           <>
-            <Button variant="outline" size="sm" asChild>
-              <Link href={`/trips/edit/${trip.id}`}>
-                <Edit3 className="ms-1 h-4 w-4" /> تعديل
-              </Link>
-            </Button>
+            {isEditable ? (
+                <Button variant="outline" size="sm" asChild>
+                    <Link href={`/trips/edit/${trip.id}`}>
+                        <Edit3 className="ms-1 h-4 w-4" /> تعديل
+                    </Link>
+                </Button>
+            ) : (
+                <Button variant="outline" size="sm" disabled title="لا يمكن تعديل الرحلة بعد مرور 10 دقائق على إنشائها">
+                    <Edit3 className="ms-1 h-4 w-4" /> تعديل
+                </Button>
+            )}
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" size="sm">
@@ -359,6 +371,8 @@ export default function TripsPage() {
               seatId,
               seatName,
               passengerName: passengerBooking.fullName || 'اسم الراكب غير مسجل',
+              paymentMethod: passengerBooking.paymentMethod,
+              dropOffPoint: passengerBooking.dropOffPoint,
             });
           }
         }
@@ -454,16 +468,16 @@ export default function TripsPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-3xl font-bold h-underline">رحلاتك القادمة والجارية</h1>
+        <h1 className="text-2xl md:text-3xl font-bold h-underline">رحلاتك القادمة والجارية</h1>
         {canCreateTrip ? (
-          <Button asChild>
+          <Button asChild size="sm">
             <Link href="/trips/create">
-              <Plus className="ms-2 h-5 w-5" /> إضافة رحلة جديدة
+              <Plus className="ms-2 h-4 w-4" /> إضافة رحلة جديدة
             </Link>
           </Button>
         ) : (
-          <Button disabled>
-            <Plus className="ms-2 h-5 w-5" /> إضافة رحلة جديدة
+          <Button disabled size="sm">
+            <Plus className="ms-2 h-4 w-4" /> إضافة رحلة جديدة
             <span className="text-xs me-2">(لديك رحلة نشطة)</span>
           </Button>
         )}
@@ -507,10 +521,27 @@ export default function TripsPage() {
             <div className="max-h-[60vh] overflow-y-auto p-1">
               <ul className="space-y-3">
                 {passengerDetailsList.map(passenger => (
-                  <li key={passenger.seatId} className="flex justify-between items-center p-3 border rounded-md shadow-sm">
-                    <div>
+                  <li key={passenger.seatId} className="flex flex-col p-3 border rounded-md shadow-sm space-y-2">
+                    <div className="flex justify-between items-center w-full">
                       <p className="font-semibold">{passenger.passengerName}</p>
-                      <p className="text-sm text-muted-foreground">المقعد: {passenger.seatName}</p>
+                      <p className="text-sm text-muted-foreground bg-secondary px-2 py-1 rounded">المقعد: {passenger.seatName}</p>
+                    </div>
+                    <div className="text-sm text-muted-foreground space-y-1 border-t pt-2 mt-2">
+                      {passenger.paymentMethod && (
+                          <div className="flex items-center gap-2">
+                              <Wallet className="h-4 w-4 text-primary" />
+                              <span>الدفع: {passenger.paymentMethod === 'cash' ? 'كاش' : 'كليك'}</span>
+                          </div>
+                      )}
+                      {passenger.dropOffPoint && (
+                          <div className="flex items-center gap-2">
+                              <MapPin className="h-4 w-4 text-primary" />
+                              <span>نقطة النزول: {passenger.dropOffPoint}</span>
+                          </div>
+                      )}
+                      {!passenger.paymentMethod && !passenger.dropOffPoint && (
+                          <p className="text-xs italic">لا توجد تفاصيل إضافية.</p>
+                      )}
                     </div>
                   </li>
                 ))}
@@ -528,5 +559,3 @@ export default function TripsPage() {
     </div>
   );
 }
-
-    
