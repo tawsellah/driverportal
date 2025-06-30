@@ -40,7 +40,7 @@ interface DisplayPassengerDetails {
   seatId: string;
   seatName: string;
   passengerName: string;
-  paymentMethod?: string;
+  paymentType?: string;
   dropOffPoint?: string;
 }
 
@@ -371,7 +371,7 @@ export default function TripsPage() {
               seatId,
               seatName,
               passengerName: passengerBooking.fullName || 'اسم الراكب غير مسجل',
-              paymentMethod: passengerBooking.paymentMethod,
+              paymentType: passengerBooking.paymentType,
               dropOffPoint: passengerBooking.dropOffPoint,
             });
           }
@@ -527,10 +527,10 @@ export default function TripsPage() {
                       <p className="text-sm text-muted-foreground bg-secondary px-2 py-1 rounded">المقعد: {passenger.seatName}</p>
                     </div>
                     <div className="text-sm text-muted-foreground space-y-1 border-t pt-2 mt-2">
-                      {passenger.paymentMethod && (
+                      {passenger.paymentType && (
                           <div className="flex items-center gap-2">
                               <Wallet className="h-4 w-4 text-primary" />
-                              <span>الدفع: {passenger.paymentMethod === 'cash' ? 'كاش' : 'كليك'}</span>
+                              <span>الدفع: {passenger.paymentType === 'cash' ? 'كاش' : 'كليك'}</span>
                           </div>
                       )}
                       {passenger.dropOffPoint && (
@@ -539,7 +539,7 @@ export default function TripsPage() {
                               <span>نقطة النزول: {passenger.dropOffPoint}</span>
                           </div>
                       )}
-                      {!passenger.paymentMethod && !passenger.dropOffPoint && (
+                      {!passenger.paymentType && !passenger.dropOffPoint && (
                           <p className="text-xs italic">لا توجد تفاصيل إضافية.</p>
                       )}
                     </div>
