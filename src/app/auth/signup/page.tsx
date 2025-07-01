@@ -18,7 +18,7 @@ import { IconInput as OriginalIconInputComponent } from '@/components/shared/ico
 import { VEHICLE_TYPES } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
-import { createDriverAccount } from '@/lib/firebaseService';
+import { createDriverAccount, type UserProfile } from '@/lib/firebaseService';
 
 const signUpSchema = z.object({
   fullName: z.string().min(3, { message: "الاسم الكامل مطلوب." }),
@@ -123,7 +123,7 @@ export default function SignUpPage() {
         throw new Error("فشل رفع صورة واحدة أو أكثر. الرجاء المحاولة مرة أخرى.");
       }
       
-      const profileData = {
+      const profileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt' | 'email' | 'status'> = {
         fullName: data.fullName,
         phone: data.phone,
         secondaryPhone: data.secondaryPhone || '',
@@ -138,14 +138,17 @@ export default function SignUpPage() {
         vehiclePlateNumber: data.plateNumber,
         vehiclePhotosUrl: vehiclePhotoUrl,
         paymentMethods: { cash: true, click: false, clickCode: '' },
+        rating: 5,
+        tripsCount: 0,
+        walletBalance: 0,
       };
 
-      // Step 2: Create user in Firebase Auth and save profile to DB
+      // Step 2: Create user in Firebase Auth and save profile to DB with 'pending' status
       await createDriverAccount(profileData, data.password);
 
       toast({
-        title: "تم إنشاء الحساب بنجاح",
-        description: "يمكنك الآن تسجيل الدخول باستخدام رقم هاتفك وكلمة المرور.",
+        title: "تم استلام طلب التسجيل",
+        description: "سيتم التواصل معك بأقرب وقت ممكن للموافقة على حسابك.",
       });
       router.push('/auth/signin');
 
@@ -162,8 +165,7 @@ export default function SignUpPage() {
         description: errorMessage,
         variant: "destructive",
       });
-    } finally {
-      setIsLoading(false);
+       setIsLoading(false);
     }
   };
 
@@ -305,5 +307,4 @@ export default function SignUpPage() {
     </div>
   );
 }
-
     

@@ -8,7 +8,8 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential,
   updatePassword,
-  createUserWithEmailAndPassword
+  createUserWithEmailAndPassword,
+  signOut as firebaseSignOut
 } from 'firebase/auth';
 import { ref, set, get, child, update, remove, query, orderByChild, equalTo, serverTimestamp, runTransaction, push } from 'firebase/database';
 import type { SeatID } from './constants';
@@ -48,7 +49,7 @@ export interface UserProfile {
   vehicleYear?: string;
   vehicleColor?: string;
   vehiclePlateNumber?: string;
-  vehiclePhotosUrl?: string | null; // Note: was vehiclePhotoUrl in signup, should be consistent or mapped
+  vehiclePhotosUrl?: string | null;
   rating?: number;
   tripsCount?: number;
   paymentMethods?: {
@@ -57,7 +58,8 @@ export interface UserProfile {
     clickCode?: string;
   };
   walletBalance?: number; 
-  topUpCodes?: Record<string, UserProfileTopUpCode>; // Key is an auto-generated ID for the code entry
+  topUpCodes?: Record<string, UserProfileTopUpCode>;
+  status: 'pending' | 'approved' | 'rejected';
   createdAt: any; 
   updatedAt?: any;
 }
@@ -134,6 +136,7 @@ export const saveUserProfile = async (userId: string, profileData: Omit<UserProf
   const fullProfileData: UserProfile = {
     id: userId,
     ...profileData,
+    status: profileData.status || 'pending',
     walletBalance: profileData.walletBalance || 0, 
     topUpCodes: profileData.topUpCodes || {},
     createdAt: serverTimestamp(),
@@ -164,7 +167,7 @@ export const updateUserProfile = async (userId: string, updates: Partial<UserPro
 };
 
 export const createDriverAccount = async (
-  profileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt' | 'email'>,
+  profileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt' | 'email' | 'status'>,
   password: string
 ): Promise<string> => {
     if (!auth) {
@@ -183,9 +186,14 @@ export const createDriverAccount = async (
         rating: 5, // Default rating
         tripsCount: 0,
         walletBalance: 0,
+        status: 'pending' as const,
     };
     
     await saveUserProfile(userId, finalProfileData);
+
+    // Sign out the user immediately after account creation
+    await firebaseSignOut(auth);
+    
     return userId;
 };
 

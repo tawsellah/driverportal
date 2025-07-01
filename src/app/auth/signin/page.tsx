@@ -14,8 +14,9 @@ import { useToast } from '@/hooks/use-toast';
 import { Phone, Lock, LogIn, ArrowLeft, Loader2 } from 'lucide-react';
 import { IconInput } from '@/components/shared/icon-input';
 import { auth } from '@/lib/firebase';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { setAuthStatus } from '@/lib/storage';
+import { getUserProfile } from '@/lib/firebaseService';
 
 const signInSchema = z.object({
   phone: z.string().regex(/^07[789]\d{7}$/, { message: "الرجاء إدخال رقم هاتف أردني صحيح." }),
@@ -38,7 +39,23 @@ export default function SignInPage() {
     const constructedEmail = `t${data.phone}@tawsellah.com`;
 
     try {
-      await signInWithEmailAndPassword(auth, constructedEmail, data.password);
+      const userCredential = await signInWithEmailAndPassword(auth, constructedEmail, data.password);
+      const user = userCredential.user;
+      
+      const profile = await getUserProfile(user.uid);
+
+      if (profile?.status === 'pending') {
+        await signOut(auth);
+        setAuthStatus(false);
+        toast({
+          title: "الحساب قيد المراجعة",
+          description: "Your account is still under review. Please wait for approval.",
+          variant: "destructive",
+          duration: 5000,
+        });
+        setIsLoading(false);
+        return;
+      }
       
       setAuthStatus(true);
       toast({
@@ -46,6 +63,7 @@ export default function SignInPage() {
         description: "مرحباً بك مجدداً في توصيلة.",
       });
       router.push('/trips');
+
     } catch (error: any) {
       console.error("Firebase SignIn Error:", error);
       let errorMessage = "حدث خطأ غير متوقع. الرجاء المحاولة مرة أخرى.";
@@ -68,7 +86,6 @@ export default function SignInPage() {
         description: errorMessage,
         variant: "destructive",
       });
-    } finally {
       setIsLoading(false);
     }
   };
