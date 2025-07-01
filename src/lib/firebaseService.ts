@@ -57,7 +57,6 @@ export interface UserProfile {
   };
   walletBalance?: number; 
   topUpCodes?: Record<string, UserProfileTopUpCode>; // Key is an auto-generated ID for the code entry
-  sessionToken?: string | null;
   createdAt: any; 
   updatedAt?: any;
 }

@@ -14,9 +14,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Phone, Lock, LogIn, ArrowLeft, Loader2 } from 'lucide-react'; // Changed Mail to Phone
 import { IconInput } from '@/components/shared/icon-input';
 import { auth } from '@/lib/firebase';
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { setAuthStatus } from '@/lib/storage';
-import { getUserProfile, updateUserProfile } from '@/lib/firebaseService';
 
 const signInSchema = z.object({
   phone: z.string().regex(/^07[789]\d{7}$/, { message: "الرجاء إدخال رقم هاتف أردني صحيح." }),
@@ -39,28 +38,7 @@ export default function SignInPage() {
     const constructedEmail = `t${data.phone}@tawsellah.com`;
 
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, constructedEmail, data.password);
-      const user = userCredential.user;
-
-      const profile = await getUserProfile(user.uid);
-
-      // Check for existing session token
-      if (profile?.sessionToken) {
-        await signOut(auth); // Sign out the current attempt
-        toast({
-          title: "فشل تسجيل الدخول",
-          description: "أنت مسجل الدخول بالفعل على جهاز آخر.",
-          variant: "destructive",
-          duration: 5000,
-        });
-        setIsLoading(false);
-        return;
-      }
-
-      // If no session, create and store a new session token
-      const token = Math.random().toString(36).substring(2);
-      await updateUserProfile(user.uid, { sessionToken: token });
-      localStorage.setItem('sessionToken', token);
+      await signInWithEmailAndPassword(auth, constructedEmail, data.password);
       
       setAuthStatus(true);
       toast({
