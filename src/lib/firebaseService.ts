@@ -37,6 +37,7 @@ export interface UserProfile {
   fullName: string;
   email: string; 
   phone: string; 
+  secondaryPhone?: string;
   idNumber?: string;
   idPhotoUrl?: string | null; 
   licenseNumber?: string;

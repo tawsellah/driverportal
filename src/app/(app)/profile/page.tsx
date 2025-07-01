@@ -24,6 +24,8 @@ import {
 import { setAuthStatus } from '@/lib/storage';
 import { Checkbox } from "@/components/ui/checkbox";
 import { ChangePasswordDialog } from '@/components/profile/change-password-dialog';
+import { IconInput } from '@/components/shared/icon-input';
+
 
 const profileSchema = z.object({
   paymentMethods: z.object({
@@ -31,6 +33,7 @@ const profileSchema = z.object({
     click: z.boolean().optional().default(false),
     clickCode: z.string().optional().nullable(),
   }).optional(),
+  secondaryPhone: z.string().regex(/^07[789]\d{7}$/, { message: "رقم هاتف أردني غير صالح." }).optional().or(z.literal('')),
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -97,6 +100,7 @@ export default function ProfilePage() {
             click: false,
             clickCode: '',
         },
+        secondaryPhone: '',
     }
   });
 
@@ -112,6 +116,7 @@ export default function ProfilePage() {
             if (profile) {
               reset({
                 paymentMethods: profile.paymentMethods || { cash: true, click: false, clickCode: '' },
+                secondaryPhone: profile.secondaryPhone || '',
               });
             }
         } catch (error) {
@@ -165,6 +170,7 @@ export default function ProfilePage() {
         click: data.paymentMethods?.click || false,
         clickCode: data.paymentMethods?.click ? (data.paymentMethods?.clickCode || '') : '',
       },
+      secondaryPhone: data.secondaryPhone,
       idPhotoUrl: actualUploadedPhotoUrl,
     };
 
@@ -175,6 +181,7 @@ export default function ProfilePage() {
        if (refreshedProfile) {
           reset({ 
             paymentMethods: refreshedProfile.paymentMethods || { cash: true, click: false, clickCode: '' },
+            secondaryPhone: refreshedProfile.secondaryPhone || '',
           });
         }
       setNewPhotoFile(null); 
@@ -275,6 +282,19 @@ export default function ProfilePage() {
                     <p className="text-foreground">{userProfile.phone}</p>
                 </div>
               </div>
+              <div>
+                <Label htmlFor="secondaryPhone">رقم هاتف إضافي (اختياري)</Label>
+                <IconInput 
+                    icon={Phone} 
+                    id="secondaryPhone" 
+                    type="tel"
+                    {...register('secondaryPhone')}
+                    disabled={!isEditing}
+                    placeholder="أدخل رقم الهاتف الإضافي"
+                    className="mt-1"
+                />
+                {errors.secondaryPhone && <p className="mt-1 text-sm text-destructive">{errors.secondaryPhone.message}</p>}
+              </div>
             </div>
             
             <h3 className="text-lg font-semibold border-b pb-2 mt-6 mb-3">طرق الدفع المقبولة</h3>
@@ -334,7 +354,7 @@ export default function ProfilePage() {
         <CardFooter className="flex flex-col gap-2">
           {!isEditing ? (
             <Button onClick={() => { setIsEditing(true); }} className="w-full">
-              <Edit3 className="ms-2 h-4 w-4" /> تعديل طرق الدفع والصورة
+              <Edit3 className="ms-2 h-4 w-4" /> تعديل الملف الشخصي
             </Button>
           ) : (
              <Button onClick={() => { 
@@ -343,6 +363,7 @@ export default function ProfilePage() {
                 if(userProfile) { 
                     reset({ 
                         paymentMethods: userProfile.paymentMethods || { cash: true, click: false, clickCode: '' }, 
+                        secondaryPhone: userProfile.secondaryPhone || '',
                     });
                 }
              }} variant="outline" className="w-full">

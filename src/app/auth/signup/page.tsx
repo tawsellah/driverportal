@@ -23,9 +23,10 @@ import { addDriverToWaitingList } from '@/lib/firebaseService';
 const signUpSchema = z.object({
   fullName: z.string().min(3, { message: "الاسم الكامل مطلوب." }),
   phone: z.string().regex(/^07[789]\d{7}$/, { message: "رقم هاتف أردني غير صالح (مثال: 0791234567)." }),
+  secondaryPhone: z.string().regex(/^07[789]\d{7}$/, { message: "رقم هاتف أردني غير صالح." }).optional().or(z.literal('')),
   password: z.string().min(6, { message: "كلمة المرور يجب أن تكون 6 أحرف على الأقل." }),
   idNumber: z.string().regex(/^[A-Z0-9]{8}$/, { message: "رقم الهوية يجب أن يتكون من 8 أحرف إنجليزية كبيرة وأرقام." }),
-  idPhoto: z.any().refine(files => files?.length > 0, { message: "صورة الهوية مطلوبة." }),
+  idPhoto: z.any().refine(files => files?.length > 0, { message: "الصورة الشخصية مطلوبة." }),
   licenseNumber: z.string().regex(/^[0-9]{8}$/, { message: "رقم الرخصة يجب أن يتكون من 8 أرقام." }),
   licenseExpiry: z.string().min(1, { message: "تاريخ انتهاء الرخصة مطلوب." }),
   licensePhoto: z.any().refine(files => files?.length > 0, { message: "صورة الرخصة مطلوبة." }),
@@ -120,6 +121,7 @@ export default function SignUpPage() {
       const waitingListData = {
         fullName: data.fullName,
         phone: data.phone,
+        secondaryPhone: data.secondaryPhone,
         password: data.password, // This will be used by admin to create the account
         email: `t${data.phone}@tawsellah.com`,
         idNumber: data.idNumber,
@@ -189,6 +191,11 @@ export default function SignUpPage() {
                   {errors.phone && <p className="mt-1 text-sm text-destructive">{errors.phone.message}</p>}
                 </div>
                 <div>
+                  <Label htmlFor="secondaryPhone">رقم هاتف إضافي (اختياري)</Label>
+                  <IconInput icon={Phone} id="secondaryPhone" type="tel" {...register('secondaryPhone')} error={errors.secondaryPhone?.message} />
+                  {errors.secondaryPhone && <p className="mt-1 text-sm text-destructive">{errors.secondaryPhone.message}</p>}
+                </div>
+                <div>
                   <Label htmlFor="password">كلمة المرور <span className="text-destructive">*</span></Label>
                   <IconInput icon={Lock} id="password" type="password" {...register('password')} error={errors.password?.message} />
                   {errors.password && <p className="mt-1 text-sm text-destructive">{errors.password.message}</p>}
@@ -201,12 +208,12 @@ export default function SignUpPage() {
                 <h3 className="text-lg font-semibold">معلومات السائق</h3>
               </AccordionTrigger>
               <AccordionContent className="space-y-4 pt-4">
+                 <FileInput label="الصورة الشخصية" id="idPhoto" error={errors.idPhoto?.message as string} register={register} fieldName="idPhoto" isRequired={true} />
                 <div>
                   <Label htmlFor="idNumber">رقم الهوية <span className="text-destructive">*</span></Label>
                   <IconInput icon={CreditCard} id="idNumber" {...register('idNumber')} error={errors.idNumber?.message} maxLength={8} />
                   {errors.idNumber && <p className="mt-1 text-sm text-destructive">{errors.idNumber.message}</p>}
                 </div>
-                <FileInput label="صورة الهوية" id="idPhoto" error={errors.idPhoto?.message as string} register={register} fieldName="idPhoto" isRequired={true} />
                 <div>
                   <Label htmlFor="licenseNumber">رقم الرخصة <span className="text-destructive">*</span></Label>
                   <IconInput icon={CreditCard} id="licenseNumber" {...register('licenseNumber')} error={errors.licenseNumber?.message} maxLength={8} />
