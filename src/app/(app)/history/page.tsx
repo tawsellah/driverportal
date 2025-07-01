@@ -3,10 +3,10 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { AlertTriangle, Briefcase, CalendarDays, Clock, DollarSign, Download, Filter, MapPin, Route, Users, Armchair, ListChecks, Loader2, Wallet, Gift } from 'lucide-react';
+import { AlertTriangle, CalendarDays, DollarSign, MapPin, Route, Users, Armchair, ListChecks, Loader2, Wallet, Gift } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
@@ -24,7 +24,6 @@ import { useRouter } from 'next/navigation';
 
 
 function CompletedTripCard({ trip }: { trip: Trip }) {
-  const { toast } = useToast();
   const startPointName = JORDAN_GOVERNORATES.find(g => g.id === trip.startPoint)?.name || trip.startPoint;
   const destinationName = JORDAN_GOVERNORATES.find(g => g.id === trip.destination)?.name || trip.destination;
   const stopNames = trip.stops?.map(s => JORDAN_GOVERNORATES.find(g => g.id === s)?.name || s).join('، ');
@@ -58,7 +57,7 @@ function CompletedTripCard({ trip }: { trip: Trip }) {
           {trip.status === 'completed' && <span className="me-auto text-sm font-medium bg-green-100 text-green-700 px-2 py-1 rounded-full">مكتملة</span>}
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2 text-sm">
+      <CardContent className="space-y-2 text-sm pb-4">
         {stopNames && (
           <div className="flex items-center">
             <MapPin className="ms-2 h-4 w-4 text-muted-foreground" />
@@ -101,17 +100,13 @@ function CompletedTripCard({ trip }: { trip: Trip }) {
           </div>
         )}
       </CardContent>
-      <CardFooter className="flex justify-end">
-        <Button variant="outline" size="sm" onClick={() => toast({ title: "تفاصيل الركاب (قيد التطوير)"})}>
-          <Users className="ms-1 h-4 w-4" /> عرض الركاب
-        </Button>
-      </CardFooter>
     </Card>
   );
 }
 
 export default function HistoryPage() {
-  const [completedTrips, setCompletedTrips] = useState<Trip[]>([]);
+  const [allTrips, setAllTrips] = useState<Trip[]>([]);
+  const [visibleTripsCount, setVisibleTripsCount] = useState(5);
   const [isLoading, setIsLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [chargeCodeInput, setChargeCodeInput] = useState('');
@@ -127,7 +122,7 @@ export default function HistoryPage() {
         getCompletedTripsForDriver(userId),
         getUserProfile(userId)
       ]);
-      setCompletedTrips(trips);
+      setAllTrips(trips);
       setUserProfile(profile);
     } catch (error) {
       console.error("Error fetching history or profile:", error);
@@ -158,10 +153,9 @@ export default function HistoryPage() {
       if (currentUserId) {
         try {
           const trips = await getCompletedTripsForDriver(currentUserId);
-          setCompletedTrips(trips);
+          setAllTrips(trips);
         } catch (error) {
           console.warn("Polling completed trips failed:", error);
-          // Optionally, inform the user if polling fails, but be mindful of toast fatigue.
         }
       }
     };
@@ -240,10 +234,8 @@ export default function HistoryPage() {
     }
   };
 
-
-  const totalEarnings = completedTrips
-    .filter(trip => trip.status === 'completed' && trip.earnings !== undefined)
-    .reduce((sum, trip) => sum + (trip.earnings || 0), 0);
+  const displayedTrips = allTrips.slice(0, visibleTripsCount);
+  const hasMoreTrips = allTrips.length > visibleTripsCount;
 
   if (isLoading && !userProfile) {
     return (
@@ -255,26 +247,12 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div className="flex items-center">
         <h1 className="text-3xl font-bold h-underline flex items-center">
           <ListChecks className="me-3 h-8 w-8 text-primary" />
           سجل الرحلات
         </h1>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => toast({ title: "فلترة الرحلات (قيد التطوير)"})}>
-            <Filter className="ms-2 h-4 w-4" /> فلترة
-          </Button>
-          <Button onClick={() => toast({ title: "تصدير البيانات غير متوفر حالياً" })}>
-            <Download className="ms-2 h-4 w-4" /> تصدير البيانات
-          </Button>
-        </div>
       </div>
-
-      <Card className="bg-secondary/50">
-        <CardContent className="p-4">
-          <p className="text-lg font-semibold">إجمالي الأرباح من الرحلات المكتملة: <span className="text-green-600">{totalEarnings.toFixed(2)} د.أ</span></p>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>
@@ -310,7 +288,7 @@ export default function HistoryPage() {
       </Card>
 
 
-      {completedTrips.length === 0 && !isLoading ? (
+      {allTrips.length === 0 && !isLoading ? (
         <Card className="text-center py-10">
           <CardContent className="flex flex-col items-center">
             <AlertTriangle className="w-16 h-16 text-muted-foreground mb-4" />
@@ -319,9 +297,16 @@ export default function HistoryPage() {
         </Card>
       ) : (
         <div>
-          {completedTrips.map(trip => (
+          {displayedTrips.map(trip => (
             <CompletedTripCard key={trip.id} trip={trip} />
           ))}
+          {hasMoreTrips && (
+             <div className="text-center mt-4">
+                <Button onClick={() => setVisibleTripsCount(allTrips.length)}>
+                  مشاهدة المزيد
+                </Button>
+              </div>
+          )}
         </div>
       )}
     </div>
