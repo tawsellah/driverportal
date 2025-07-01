@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Phone, Lock, LogIn, ArrowLeft, Loader2 } from 'lucide-react'; // Changed Mail to Phone
+import { Phone, Lock, LogIn, ArrowLeft, Loader2 } from 'lucide-react';
 import { IconInput } from '@/components/shared/icon-input';
 import { auth } from '@/lib/firebase';
 import { signInWithEmailAndPassword } from 'firebase/auth';
@@ -48,9 +48,20 @@ export default function SignInPage() {
       router.push('/trips');
     } catch (error: any) {
       console.error("Firebase SignIn Error:", error);
-      let errorMessage = "رقم الهاتف أو كلمة المرور غير صحيحة.";
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+      let errorMessage = "حدث خطأ غير متوقع. الرجاء المحاولة مرة أخرى.";
+      switch (error.code) {
+        case 'auth/invalid-credential':
           errorMessage = "رقم الهاتف أو كلمة المرور غير صحيحة.";
+          break;
+        case 'auth/user-disabled':
+          errorMessage = "تم تعطيل هذا الحساب. يرجى التواصل مع الدعم.";
+          break;
+        case 'auth/too-many-requests':
+          errorMessage = "تم حظر هذا الجهاز مؤقتًا بسبب كثرة محاولات تسجيل الدخول الفاشلة.";
+          break;
+        case 'auth/network-request-failed':
+            errorMessage = "حدث خطأ في الشبكة. يرجى التحقق من اتصالك بالإنترنت.";
+            break;
       }
       toast({
         title: "خطأ في تسجيل الدخول",
@@ -128,3 +139,4 @@ export default function SignInPage() {
     </div>
   );
 }
+    
