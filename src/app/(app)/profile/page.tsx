@@ -202,8 +202,14 @@ export default function ProfilePage() {
 
   const handleSignOut = async () => {
     try {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        // Clear the session token on sign out
+        await updateUserProfile(currentUser.uid, { sessionToken: null });
+      }
       await signOut(auth);
       setAuthStatus(false);
+      localStorage.removeItem('sessionToken'); // Also clear from local storage
       toast({ title: "تم تسجيل الخروج بنجاح." });
       router.push('/auth/signin');
     } catch (error) {
@@ -432,4 +438,5 @@ export default function ProfilePage() {
     
 
     
+
 

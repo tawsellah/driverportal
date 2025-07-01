@@ -6,7 +6,7 @@ import {
   onAuthStateChanged,
   type User as FirebaseAuthUser 
 } from 'firebase/auth';
-import { ref, set, get, child, update, remove, query, orderByChild, equalTo, serverTimestamp, runTransaction } from 'firebase/database';
+import { ref, set, get, child, update, remove, query, orderByChild, equalTo, serverTimestamp, runTransaction, push } from 'firebase/database';
 import type { SeatID } from './constants';
 import { SEAT_CONFIG } from './constants'; 
 
@@ -53,6 +53,7 @@ export interface UserProfile {
   };
   walletBalance?: number; 
   topUpCodes?: Record<string, UserProfileTopUpCode>; // Key is an auto-generated ID for the code entry
+  sessionToken?: string | null;
   createdAt: any; 
   updatedAt?: any;
 }
@@ -79,10 +80,12 @@ export type NewTripData = Omit<Trip, 'id' | 'status' | 'earnings' | 'driverId' |
 
 // --- Auth Service ---
 export const getCurrentUser = (): FirebaseAuthUser | null => {
+  if (!authInternal) return null;
   return authInternal.currentUser;
 };
 
 export const onAuthUserChangedListener = (callback: (user: FirebaseAuthUser | null) => void) => {
+  if (!authInternal) return () => {};
   return onAuthStateChanged(authInternal, callback);
 };
 
@@ -120,6 +123,16 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 export const updateUserProfile = async (userId: string, updates: Partial<UserProfile>): Promise<void> => {
   const userRef = ref(databaseInternal, `users/${userId}`);
   await update(userRef, {...updates, updatedAt: serverTimestamp()});
+};
+
+export const addDriverToWaitingList = async (driverData: any): Promise<void> => {
+  const waitingListRef = ref(database, `drivers_waiting_list`);
+  const newDriverRef = push(waitingListRef);
+  await set(newDriverRef, {
+      ...driverData,
+      status: 'pending',
+      submittedAt: serverTimestamp()
+  });
 };
 
 // --- Wallet Service (Charge Code Logic) ---

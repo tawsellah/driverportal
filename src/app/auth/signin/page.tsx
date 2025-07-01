@@ -14,8 +14,9 @@ import { useToast } from '@/hooks/use-toast';
 import { Phone, Lock, LogIn, ArrowLeft, Loader2 } from 'lucide-react'; // Changed Mail to Phone
 import { IconInput } from '@/components/shared/icon-input';
 import { auth } from '@/lib/firebase';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { setAuthStatus } from '@/lib/storage';
+import { getUserProfile, updateUserProfile } from '@/lib/firebaseService';
 
 const signInSchema = z.object({
   phone: z.string().regex(/^07[789]\d{7}$/, { message: "الرجاء إدخال رقم هاتف أردني صحيح." }),
@@ -38,8 +39,30 @@ export default function SignInPage() {
     const constructedEmail = `t${data.phone}@tawsellah.com`;
 
     try {
-      await signInWithEmailAndPassword(auth, constructedEmail, data.password);
-      setAuthStatus(true); // For client-side navigation
+      const userCredential = await signInWithEmailAndPassword(auth, constructedEmail, data.password);
+      const user = userCredential.user;
+
+      const profile = await getUserProfile(user.uid);
+
+      // Check for existing session token
+      if (profile?.sessionToken) {
+        await signOut(auth); // Sign out the current attempt
+        toast({
+          title: "فشل تسجيل الدخول",
+          description: "أنت مسجل الدخول بالفعل على جهاز آخر.",
+          variant: "destructive",
+          duration: 5000,
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      // If no session, create and store a new session token
+      const token = Math.random().toString(36).substring(2);
+      await updateUserProfile(user.uid, { sessionToken: token });
+      localStorage.setItem('sessionToken', token);
+      
+      setAuthStatus(true);
       toast({
         title: "تم تسجيل الدخول بنجاح!",
         description: "مرحباً بك مجدداً في توصيلة.",
@@ -47,20 +70,32 @@ export default function SignInPage() {
       router.push('/trips');
     } catch (error: any) {
       console.error("Firebase SignIn Error:", error);
+      let errorMessage = "رقم الهاتف أو كلمة المرور غير صحيحة.";
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+          errorMessage = "رقم الهاتف أو كلمة المرور غير صحيحة.";
+      }
       toast({
         title: "خطأ في تسجيل الدخول",
-        description: "رقم الهاتف أو كلمة المرور غير صحيحة.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
       setIsLoading(false);
     }
   };
+  
+  const handleForgotPassword = (e: React.MouseEvent) => {
+    e.preventDefault();
+    toast({
+        title: "قيد التطوير",
+        description: "ميزة استعادة كلمة المرور غير متوفرة حاليًا.",
+    });
+  };
 
   return (
     <div className="form-card">
       <h2 className="mb-6 text-center text-2xl font-bold">تسجيل الدخول</h2>
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <div>
           <Label htmlFor="phone">رقم الهاتف</Label>
           <IconInput
@@ -87,6 +122,12 @@ export default function SignInPage() {
             aria-invalid={errors.password ? "true" : "false"}
           />
           {errors.password && <p className="mt-1 text-sm text-destructive">{errors.password.message}</p>}
+        </div>
+        
+        <div className="text-right">
+          <Link href="#" onClick={handleForgotPassword} className="text-sm text-primary hover:underline">
+            نسيت كلمة السر؟
+          </Link>
         </div>
 
         <Button type="submit" className="w-full" disabled={isLoading}>

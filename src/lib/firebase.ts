@@ -1,7 +1,7 @@
 // Import the functions you need from the SDKs you need
-import { initializeApp, type FirebaseApp } from "firebase/app";
-import { getAnalytics, type Analytics } from "firebase/analytics";
-import { getAuth, type Auth } from "firebase/auth";
+import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
+import { getAnalytics, type Analytics, isSupported } from "firebase/analytics";
+import { getAuth, type Auth, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { getDatabase, type Database } from "firebase/database";
 
 // Your web app's Firebase configuration
@@ -24,17 +24,33 @@ let database: Database;
 let analytics: Analytics | null = null;
 
 if (typeof window !== 'undefined') {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  database = getDatabase(app);
-  // Initialize Analytics only if supported and in browser
-  if (firebaseConfig.measurementId) {
-    analytics = getAnalytics(app);
+  if (!getApps().length) {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    database = getDatabase(app);
+    // Explicitly set persistence to 'local' to keep user signed in
+    setPersistence(auth, browserLocalPersistence); 
+    isSupported().then((supported) => {
+      if (supported && firebaseConfig.measurementId) {
+        analytics = getAnalytics(app);
+      }
+    });
+  } else {
+    app = getApp();
+    auth = getAuth(app);
+    database = getDatabase(app);
+    if (firebaseConfig.measurementId) {
+      isSupported().then((supported) => {
+        if (supported) {
+          try {
+            analytics = getAnalytics(app);
+          } catch (e) {
+            analytics = null;
+          }
+        }
+      });
+    }
   }
-} else {
-  // Provide non-functional stubs or handle server-side appropriately if needed
-  // For this client-heavy app, direct server-side Firebase might not be used extensively
-  // but good to have placeholders if ever needed.
 }
 
 export { app, auth, database, analytics };

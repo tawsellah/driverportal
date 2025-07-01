@@ -18,25 +18,22 @@ import { IconInput as OriginalIconInputComponent } from '@/components/shared/ico
 import { VEHICLE_TYPES } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
-import { auth } from '@/lib/firebase';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { saveUserProfile, type UserProfile } from '@/lib/firebaseService';
-import { setAuthStatus } from '@/lib/storage';
+import { addDriverToWaitingList } from '@/lib/firebaseService';
 
 const signUpSchema = z.object({
   fullName: z.string().min(3, { message: "الاسم الكامل مطلوب." }),
   phone: z.string().regex(/^07[789]\d{7}$/, { message: "رقم هاتف أردني غير صالح (مثال: 0791234567)." }),
   password: z.string().min(6, { message: "كلمة المرور يجب أن تكون 6 أحرف على الأقل." }),
   idNumber: z.string().regex(/^[A-Z0-9]{8}$/, { message: "رقم الهوية يجب أن يتكون من 8 أحرف إنجليزية كبيرة وأرقام." }),
-  idPhoto: z.any().refine(files => files && files.length > 0, { message: "صورة الهوية مطلوبة." }),
+  idPhoto: z.any().refine(files => files?.length > 0, { message: "صورة الهوية مطلوبة." }),
   licenseNumber: z.string().regex(/^[0-9]{8}$/, { message: "رقم الرخصة يجب أن يتكون من 8 أرقام." }),
   licenseExpiry: z.string().min(1, { message: "تاريخ انتهاء الرخصة مطلوب." }),
-  licensePhoto: z.any().refine(files => files && files.length > 0, { message: "صورة الرخصة مطلوبة." }),
+  licensePhoto: z.any().refine(files => files?.length > 0, { message: "صورة الرخصة مطلوبة." }),
   vehicleType: z.string().min(1, { message: "نوع المركبة مطلوب." }),
   year: z.string().min(4, { message: "سنة الصنع مطلوبة (مثال: 2020)." }).max(4),
   color: z.string().min(1, { message: "لون المركبة مطلوب." }),
   plateNumber: z.string().min(1, { message: "رقم اللوحة مطلوب." }),
-  vehiclePhoto: z.any().refine(files => files && files.length > 0, { message: "صورة المركبة مطلوبة." }),
+  vehiclePhoto: z.any().refine(files => files?.length > 0, { message: "صورة المركبة مطلوبة." }),
 });
 
 type SignUpFormValues = z.infer<typeof signUpSchema>;
@@ -56,7 +53,6 @@ async function uploadFileToImageKitHelper(file: File | undefined | null): Promis
     formData.append('signature', authParams.signature);
     formData.append('expire', authParams.expire);
     formData.append('token', authParams.token);
-    // formData.append('folder', '/user_uploads/'); // Optional
 
     const uploadResponse = await fetch('https://upload.imagekit.io/api/v1/files/upload', {
       method: 'POST',
@@ -80,7 +76,7 @@ const FileInput = ({
   label, id, error, register, fieldName, isRequired = false
 }: {
   label: string, id: string, error?: string,
-  register: any, // Use "any" for register type in this context
+  register: any,
   fieldName: keyof SignUpFormValues,
   isRequired?: boolean
 }) => (
@@ -107,59 +103,51 @@ export default function SignUpPage() {
     setIsMounted(true);
   }, []);
 
-  const { register, handleSubmit, control, setValue, formState: { errors } } = useForm<SignUpFormValues>({
+  const { register, handleSubmit, control, formState: { errors } } = useForm<SignUpFormValues>({
     resolver: zodResolver(signUpSchema),
   });
 
   const onSubmit: SubmitHandler<SignUpFormValues> = async (data) => {
     setIsLoading(true);
-    const constructedEmail = `t${data.phone}@tawsellah.com`;
 
     try {
-      // 1. Create user in Firebase Auth
-      const userCredential = await createUserWithEmailAndPassword(auth, constructedEmail, data.password);
-      const user = userCredential.user;
+      // 1. Upload images to ImageKit and get URLs
+      const idPhotoUrl = data.idPhoto?.[0] ? await uploadFileToImageKitHelper(data.idPhoto[0]) : null;
+      const licensePhotoUrl = data.licensePhoto?.[0] ? await uploadFileToImageKitHelper(data.licensePhoto[0]) : null;
+      const vehiclePhotoUrl = data.vehiclePhoto?.[0] ? await uploadFileToImageKitHelper(data.vehiclePhoto[0]) : null;
 
-      if (user) {
-        // 2. Upload images to ImageKit and get URLs
-        const idPhotoUrl = data.idPhoto && data.idPhoto.length > 0 ? await uploadFileToImageKitHelper(data.idPhoto[0]) : null;
-        const licensePhotoUrl = data.licensePhoto && data.licensePhoto.length > 0 ? await uploadFileToImageKitHelper(data.licensePhoto[0]) : null;
-        const vehiclePhotoUrl = data.vehiclePhoto && data.vehiclePhoto.length > 0 ? await uploadFileToImageKitHelper(data.vehiclePhoto[0]) : null;
+      // 2. Prepare profile data for the waiting list
+      const waitingListData = {
+        fullName: data.fullName,
+        phone: data.phone,
+        password: data.password, // This will be used by admin to create the account
+        email: `t${data.phone}@tawsellah.com`,
+        idNumber: data.idNumber,
+        idPhotoUrl,
+        licenseNumber: data.licenseNumber,
+        licenseExpiry: data.licenseExpiry,
+        licensePhotoUrl,
+        vehicleType: data.vehicleType,
+        vehicleYear: data.year,
+        vehicleColor: data.color,
+        vehiclePlateNumber: data.plateNumber,
+        vehiclePhotosUrl: vehiclePhotoUrl,
+      };
 
-        // 3. Prepare profile data for Firebase RTDB
-        const profileData: Omit<UserProfile, 'id' | 'createdAt'> = {
-          fullName: data.fullName,
-          email: constructedEmail,
-          phone: data.phone,
-          idNumber: data.idNumber,
-          idPhotoUrl: idPhotoUrl,
-          licenseNumber: data.licenseNumber,
-          licenseExpiry: data.licenseExpiry,
-          licensePhotoUrl: licensePhotoUrl,
-          vehicleType: data.vehicleType,
-          vehicleYear: data.year,
-          vehicleColor: data.color,
-          vehiclePlateNumber: data.plateNumber,
-          vehiclePhotosUrl: vehiclePhotoUrl, 
-          rating: 0,
-          tripsCount: 0,
-          paymentMethods: { cash: true, click: false },
-        };
+      // 3. Save data to the waiting list in Firebase RTDB
+      await addDriverToWaitingList(waitingListData);
 
-        // 4. Save profile to Firebase RTDB
-        await saveUserProfile(user.uid, profileData);
-        setAuthStatus(true);
-
-        toast({
-          title: "تم إنشاء الحساب بنجاح!",
-          description: "سيتم توجيهك إلى لوحة التحكم.",
-        });
-        router.push('/trips');
-      }
-    } catch (error: any) {
-      console.error("Firebase Signup Error or ImageKit Upload Error:", error);
       toast({
-        title: "خطأ في إنشاء الحساب",
+        title: "تم استلام طلب التسجيل",
+        description: "سيتم التواصل معك بأقرب وقت ممكن.",
+        duration: 8000,
+      });
+      router.push('/auth/signin');
+      
+    } catch (error: any) {
+      console.error("Signup Submission Error:", error);
+      toast({
+        title: "خطأ في إرسال الطلب",
         description: error.message || "يرجى المحاولة مرة أخرى أو التأكد من رفع الصور بشكل صحيح.",
         variant: "destructive",
       });
@@ -286,7 +274,7 @@ export default function SignUpPage() {
           ) : (
             <>
               <UserPlus className="ms-2 h-5 w-5" />
-              إنشاء الحساب
+              إرسال طلب التسجيل
             </>
            )}
         </Button>
