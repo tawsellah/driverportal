@@ -18,7 +18,9 @@ import { IconInput as OriginalIconInputComponent } from '@/components/shared/ico
 import { VEHICLE_TYPES } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
-import { addDriverToWaitingList } from '@/lib/firebaseService';
+import { auth } from '@/lib/firebase';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { saveUserProfile, type UserProfile } from '@/lib/firebaseService';
 
 const signUpSchema = z.object({
   fullName: z.string().min(3, { message: "الاسم الكامل مطلوب." }),
@@ -112,45 +114,61 @@ export default function SignUpPage() {
     setIsLoading(true);
 
     try {
-      // 1. Upload images to ImageKit and get URLs
+      // 1. Create user in Firebase Auth
+      const constructedEmail = `t${data.phone}@tawsellah.com`;
+      const userCredential = await createUserWithEmailAndPassword(auth, constructedEmail, data.password);
+      const user = userCredential.user;
+
+      // 2. Upload images to ImageKit
       const idPhotoUrl = data.idPhoto?.[0] ? await uploadFileToImageKitHelper(data.idPhoto[0]) : null;
       const licensePhotoUrl = data.licensePhoto?.[0] ? await uploadFileToImageKitHelper(data.licensePhoto[0]) : null;
       const vehiclePhotoUrl = data.vehiclePhoto?.[0] ? await uploadFileToImageKitHelper(data.vehiclePhoto[0]) : null;
 
-      // 2. Prepare profile data for the waiting list
-      const waitingListData = {
-        fullName: data.fullName,
-        phone: data.phone,
-        secondaryPhone: data.secondaryPhone,
-        password: data.password, // This will be used by admin to create the account
-        email: `t${data.phone}@tawsellah.com`,
-        idNumber: data.idNumber,
-        idPhotoUrl,
-        licenseNumber: data.licenseNumber,
-        licenseExpiry: data.licenseExpiry,
-        licensePhotoUrl,
-        vehicleType: data.vehicleType,
-        vehicleYear: data.year,
-        vehicleColor: data.color,
-        vehiclePlateNumber: data.plateNumber,
-        vehiclePhotosUrl: vehiclePhotoUrl,
+      // 3. Prepare profile data for Realtime Database
+      const userProfileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt' | 'topUpCodes'> = {
+          fullName: data.fullName,
+          phone: data.phone,
+          secondaryPhone: data.secondaryPhone || '',
+          email: constructedEmail,
+          idNumber: data.idNumber,
+          idPhotoUrl: idPhotoUrl,
+          licenseNumber: data.licenseNumber,
+          licenseExpiry: data.licenseExpiry,
+          licensePhotoUrl: licensePhotoUrl,
+          vehicleType: data.vehicleType,
+          vehicleYear: data.year,
+          vehicleColor: data.color,
+          vehiclePlateNumber: data.plateNumber,
+          vehiclePhotosUrl: vehiclePhotoUrl,
+          rating: 5, // default rating
+          tripsCount: 0,
+          walletBalance: 0,
+          paymentMethods: {
+              cash: true,
+              click: false,
+              clickCode: ''
+          }
       };
 
-      // 3. Save data to the waiting list in Firebase RTDB
-      await addDriverToWaitingList(waitingListData);
-
+      // 4. Save user profile to Realtime Database
+      await saveUserProfile(user.uid, userProfileData);
+      
       toast({
-        title: "تم استلام طلب التسجيل",
-        description: "سيتم التواصل معك بأقرب وقت ممكن.",
+        title: "تم إنشاء الحساب بنجاح",
+        description: "يمكنك الآن تسجيل الدخول.",
         duration: 8000,
       });
       router.push('/auth/signin');
       
     } catch (error: any) {
       console.error("Signup Submission Error:", error);
+      let errorMessage = "حدث خطأ أثناء إنشاء الحساب.";
+      if (error.code === 'auth/email-already-in-use') {
+          errorMessage = "رقم الهاتف هذا مسجل بالفعل. حاول تسجيل الدخول.";
+      }
       toast({
-        title: "خطأ في إرسال الطلب",
-        description: error.message || "يرجى المحاولة مرة أخرى أو التأكد من رفع الصور بشكل صحيح.",
+        title: "خطأ في إنشاء الحساب",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -281,7 +299,7 @@ export default function SignUpPage() {
           ) : (
             <>
               <UserPlus className="ms-2 h-5 w-5" />
-              إرسال طلب التسجيل
+              إنشاء حساب
             </>
            )}
         </Button>
@@ -295,6 +313,5 @@ export default function SignUpPage() {
     </div>
   );
 }
-    
 
     
