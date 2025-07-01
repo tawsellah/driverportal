@@ -4,7 +4,10 @@
 import { auth as authInternal , database as databaseInternal } from './firebase'; 
 import { 
   onAuthStateChanged,
-  type User as FirebaseAuthUser 
+  type User as FirebaseAuthUser,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword
 } from 'firebase/auth';
 import { ref, set, get, child, update, remove, query, orderByChild, equalTo, serverTimestamp, runTransaction, push } from 'firebase/database';
 import type { SeatID } from './constants';
@@ -87,6 +90,21 @@ export const getCurrentUser = (): FirebaseAuthUser | null => {
 export const onAuthUserChangedListener = (callback: (user: FirebaseAuthUser | null) => void) => {
   if (!authInternal) return () => {};
   return onAuthStateChanged(authInternal, callback);
+};
+
+export const reauthenticateAndChangePassword = async (currentPassword: string, newPassword: string): Promise<void> => {
+  const user = auth.currentUser;
+  if (!user || !user.email) {
+    throw new Error("المستخدم غير مسجل الدخول أو لا يوجد بريد إلكتروني مرتبط.");
+  }
+
+  const credential = EmailAuthProvider.credential(user.email, currentPassword);
+
+  // Re-authenticate the user
+  await reauthenticateWithCredential(user, credential);
+  
+  // If re-authentication is successful, update the password
+  await updatePassword(user, newPassword);
 };
 
 
