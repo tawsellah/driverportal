@@ -18,7 +18,7 @@ import { IconInput as OriginalIconInputComponent } from '@/components/shared/ico
 import { VEHICLE_TYPES } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
-import { addDriverToWaitingList } from '@/lib/firebaseService';
+import { createDriverAccount } from '@/lib/firebaseService';
 
 const signUpSchema = z.object({
   fullName: z.string().min(3, { message: "الاسم الكامل مطلوب." }),
@@ -116,19 +116,17 @@ export default function SignUpPage() {
       const [idPhotoUrl, licensePhotoUrl, vehiclePhotoUrl] = await Promise.all([
         uploadFileToImageKitHelper(data.idPhoto?.[0]),
         uploadFileToImageKitHelper(data.licensePhoto?.[0]),
-        uploadFileToImageKitHelper(data.vehiclePhoto?.[0])
+        uploadFileToImageKitHelper(data.vehiclePhoto?.[0]),
       ]);
 
       if (!idPhotoUrl || !licensePhotoUrl || !vehiclePhotoUrl) {
         throw new Error("فشل رفع صورة واحدة أو أكثر. الرجاء المحاولة مرة أخرى.");
       }
-
-      // Step 2: Prepare profile data for the waiting list
-      const waitingListProfileData = {
+      
+      const profileData = {
         fullName: data.fullName,
         phone: data.phone,
         secondaryPhone: data.secondaryPhone || '',
-        password: data.password, // IMPORTANT: save password for admin
         idNumber: data.idNumber,
         idPhotoUrl: idPhotoUrl,
         licenseNumber: data.licenseNumber,
@@ -139,21 +137,24 @@ export default function SignUpPage() {
         vehicleColor: data.color,
         vehiclePlateNumber: data.plateNumber,
         vehiclePhotosUrl: vehiclePhotoUrl,
+        paymentMethods: { cash: true, click: false, clickCode: '' },
       };
 
-      // Step 3: Add user to the waiting list in the database
-      await addDriverToWaitingList(waitingListProfileData);
+      // Step 2: Create user in Firebase Auth and save profile to DB
+      await createDriverAccount(profileData, data.password);
 
       toast({
-        title: "تم استلام طلب التسجيل",
-        description: "سيتم التواصل معك بأقرب وقت ممكن.",
+        title: "تم إنشاء الحساب بنجاح",
+        description: "يمكنك الآن تسجيل الدخول باستخدام رقم هاتفك وكلمة المرور.",
       });
       router.push('/auth/signin');
 
     } catch (error: any) {
       console.error("Signup Error:", error);
-      let errorMessage = "حدث خطأ أثناء إرسال طلب التسجيل.";
-      if (error.message) {
+      let errorMessage = "حدث خطأ أثناء إنشاء الحساب.";
+       if (error.code === 'auth/email-already-in-use') {
+          errorMessage = "رقم الهاتف هذا مسجل بالفعل. يرجى استخدام رقم آخر أو تسجيل الدخول.";
+      } else if (error.message) {
         errorMessage = error.message;
       }
       toast({
@@ -304,3 +305,5 @@ export default function SignUpPage() {
     </div>
   );
 }
+
+    
