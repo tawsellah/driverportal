@@ -62,6 +62,25 @@ export interface UserProfile {
   updatedAt?: any;
 }
 
+export interface WaitingListDriverProfile {
+  fullName: string;
+  phone: string;
+  secondaryPhone?: string;
+  password?: string;
+  idNumber?: string;
+  idPhotoUrl?: string | null;
+  licenseNumber?: string;
+  licenseExpiry?: string;
+  licensePhotoUrl?: string | null;
+  vehicleType?: string;
+  vehicleYear?: string;
+  vehicleColor?: string;
+  vehiclePlateNumber?: string;
+  vehiclePhotosUrl?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: any;
+}
+
 export interface Trip {
   id: string; 
   driverId: string; 
@@ -168,6 +187,21 @@ export const createDriverAccount = async (
     
     await saveUserProfile(userId, finalProfileData);
     return userId;
+};
+
+export const addDriverToWaitingList = async (
+  profileData: Omit<WaitingListDriverProfile, 'status' | 'createdAt'>
+): Promise<void> => {
+    const waitingListRef = ref(databaseInternal, 'drivers_waiting_list');
+    const newDriverRef = push(waitingListRef); // Use push for a unique ID
+    
+    const dataToSave: WaitingListDriverProfile = {
+        ...profileData,
+        status: 'pending',
+        createdAt: serverTimestamp()
+    };
+    
+    await set(newDriverRef, dataToSave);
 };
 
 

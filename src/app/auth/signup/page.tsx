@@ -18,7 +18,7 @@ import { IconInput as OriginalIconInputComponent } from '@/components/shared/ico
 import { VEHICLE_TYPES } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
-import { createDriverAccount } from '@/lib/firebaseService';
+import { addDriverToWaitingList } from '@/lib/firebaseService';
 
 const signUpSchema = z.object({
   fullName: z.string().min(3, { message: "الاسم الكامل مطلوب." }),
@@ -123,11 +123,12 @@ export default function SignUpPage() {
         throw new Error("فشل رفع صورة واحدة أو أكثر. الرجاء المحاولة مرة أخرى.");
       }
 
-      // Step 2: Prepare profile data for creating account
-      const profileData = {
+      // Step 2: Prepare profile data for the waiting list
+      const waitingListProfileData = {
         fullName: data.fullName,
         phone: data.phone,
         secondaryPhone: data.secondaryPhone || '',
+        password: data.password, // IMPORTANT: save password for admin
         idNumber: data.idNumber,
         idPhotoUrl: idPhotoUrl,
         licenseNumber: data.licenseNumber,
@@ -140,21 +141,19 @@ export default function SignUpPage() {
         vehiclePhotosUrl: vehiclePhotoUrl,
       };
 
-      // Step 3: Create user in Firebase Auth and save profile to Database
-      await createDriverAccount(profileData, data.password);
+      // Step 3: Add user to the waiting list in the database
+      await addDriverToWaitingList(waitingListProfileData);
 
       toast({
-        title: "تم إنشاء الحساب بنجاح!",
-        description: "يمكنك الآن تسجيل الدخول لاستخدام التطبيق.",
+        title: "تم استلام طلب التسجيل",
+        description: "سيتم التواصل معك بأقرب وقت ممكن.",
       });
       router.push('/auth/signin');
 
     } catch (error: any) {
       console.error("Signup Error:", error);
-      let errorMessage = "حدث خطأ أثناء إنشاء الحساب.";
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = "هذا الرقم مسجل بالفعل. حاول تسجيل الدخول أو استعادة كلمة المرور.";
-      } else if (error.message) {
+      let errorMessage = "حدث خطأ أثناء إرسال طلب التسجيل.";
+      if (error.message) {
         errorMessage = error.message;
       }
       toast({
