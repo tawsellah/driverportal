@@ -18,7 +18,7 @@ import { IconInput as OriginalIconInputComponent } from '@/components/shared/ico
 import { VEHICLE_TYPES } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
-import { addDriverToWaitingList } from '@/lib/firebaseService';
+import { createDriverAccount } from '@/lib/firebaseService';
 
 const signUpSchema = z.object({
   fullName: z.string().min(3, { message: "الاسم الكامل مطلوب." }),
@@ -112,54 +112,61 @@ export default function SignUpPage() {
     setIsLoading(true);
 
     try {
-      // 1. Upload images to ImageKit
-      const idPhotoUrl = data.idPhoto?.[0] ? await uploadFileToImageKitHelper(data.idPhoto[0]) : null;
-      const licensePhotoUrl = data.licensePhoto?.[0] ? await uploadFileToImageKitHelper(data.licensePhoto[0]) : null;
-      const vehiclePhotoUrl = data.vehiclePhoto?.[0] ? await uploadFileToImageKitHelper(data.vehiclePhoto[0]) : null;
+      // Step 1: Upload all images to ImageKit concurrently
+      const [idPhotoUrl, licensePhotoUrl, vehiclePhotoUrl] = await Promise.all([
+        uploadFileToImageKitHelper(data.idPhoto?.[0]),
+        uploadFileToImageKitHelper(data.licensePhoto?.[0]),
+        uploadFileToImageKitHelper(data.vehiclePhoto?.[0])
+      ]);
 
       if (!idPhotoUrl || !licensePhotoUrl || !vehiclePhotoUrl) {
-          throw new Error("فشل رفع صورة واحدة أو أكثر. الرجاء المحاولة مرة أخرى.");
+        throw new Error("فشل رفع صورة واحدة أو أكثر. الرجاء المحاولة مرة أخرى.");
       }
 
-      // 2. Prepare data for waiting list
-      const driverWaitingData = {
-          fullName: data.fullName,
-          phone: data.phone,
-          secondaryPhone: data.secondaryPhone || '',
-          password: data.password, 
-          idNumber: data.idNumber,
-          idPhotoUrl: idPhotoUrl,
-          licenseNumber: data.licenseNumber,
-          licenseExpiry: data.licenseExpiry,
-          licensePhotoUrl: licensePhotoUrl,
-          vehicleType: data.vehicleType,
-          vehicleYear: data.year,
-          vehicleColor: data.color,
-          vehiclePlateNumber: data.plateNumber,
-          vehiclePhotosUrl: vehiclePhotoUrl,
+      // Step 2: Prepare profile data for creating account
+      const profileData = {
+        fullName: data.fullName,
+        phone: data.phone,
+        secondaryPhone: data.secondaryPhone || '',
+        idNumber: data.idNumber,
+        idPhotoUrl: idPhotoUrl,
+        licenseNumber: data.licenseNumber,
+        licenseExpiry: data.licenseExpiry,
+        licensePhotoUrl: licensePhotoUrl,
+        vehicleType: data.vehicleType,
+        vehicleYear: data.year,
+        vehicleColor: data.color,
+        vehiclePlateNumber: data.plateNumber,
+        vehiclePhotosUrl: vehiclePhotoUrl,
       };
 
-      // 3. Add to waiting list
-      await addDriverToWaitingList(driverWaitingData);
-      
+      // Step 3: Create user in Firebase Auth and save profile to Database
+      await createDriverAccount(profileData, data.password);
+
       toast({
-        title: "تم استلام طلب التسجيل",
-        description: "سيتم التواصل معك بأقرب وقت ممكن.",
-        duration: 8000,
+        title: "تم إنشاء الحساب بنجاح!",
+        description: "يمكنك الآن تسجيل الدخول لاستخدام التطبيق.",
       });
       router.push('/auth/signin');
-      
+
     } catch (error: any) {
-      console.error("Signup Submission Error:", error);
+      console.error("Signup Error:", error);
+      let errorMessage = "حدث خطأ أثناء إنشاء الحساب.";
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = "هذا الرقم مسجل بالفعل. حاول تسجيل الدخول أو استعادة كلمة المرور.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
       toast({
-        title: "خطأ في إرسال الطلب",
-        description: (error as Error).message || "حدث خطأ أثناء إرسال طلب التسجيل.",
+        title: "خطأ في التسجيل",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
       setIsLoading(false);
     }
   };
+
 
   return (
     <div className="form-card mb-10">

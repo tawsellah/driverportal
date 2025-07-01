@@ -7,7 +7,8 @@ import {
   type User as FirebaseAuthUser,
   EmailAuthProvider,
   reauthenticateWithCredential,
-  updatePassword
+  updatePassword,
+  createUserWithEmailAndPassword
 } from 'firebase/auth';
 import { ref, set, get, child, update, remove, query, orderByChild, equalTo, serverTimestamp, runTransaction, push } from 'firebase/database';
 import type { SeatID } from './constants';
@@ -143,15 +144,32 @@ export const updateUserProfile = async (userId: string, updates: Partial<UserPro
   await update(userRef, {...updates, updatedAt: serverTimestamp()});
 };
 
-export const addDriverToWaitingList = async (driverData: any): Promise<void> => {
-  const waitingListRef = ref(database, `drivers_waiting_list`);
-  const newDriverRef = push(waitingListRef);
-  await set(newDriverRef, {
-      ...driverData,
-      status: 'pending',
-      submittedAt: serverTimestamp()
-  });
+export const createDriverAccount = async (
+  profileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt' | 'email'>,
+  password: string
+): Promise<string> => {
+    if (!auth) {
+        throw new Error("Firebase Auth is not initialized.");
+    }
+    const email = `t${profileData.phone}@tawsellah.com`;
+
+    // Step 1: Create user in Firebase Auth
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const userId = userCredential.user.uid;
+
+    // Step 2: Prepare and save user profile data to Realtime Database
+    const finalProfileData = {
+        ...profileData,
+        email,
+        rating: 5, // Default rating
+        tripsCount: 0,
+        walletBalance: 0,
+    };
+    
+    await saveUserProfile(userId, finalProfileData);
+    return userId;
 };
+
 
 // --- Wallet Service (Charge Code Logic) ---
 
