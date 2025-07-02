@@ -56,6 +56,19 @@ export default function SignInPage() {
         setIsLoading(false);
         return;
       }
+
+      if (profile?.status === 'suspended') {
+        await signOut(auth);
+        setAuthStatus(false);
+        toast({
+          title: "تم تعليق حسابك",
+          description: "تم تعليق حسابك بسبب مخالفة السياسات. يرجى التواصل مع الدعم لمزيد من التفاصيل.",
+          variant: "destructive",
+          duration: 5000,
+        });
+        setIsLoading(false);
+        return;
+      }
       
       setAuthStatus(true);
       toast({
@@ -69,6 +82,7 @@ export default function SignInPage() {
       let errorMessage = "حدث خطأ غير متوقع. الرجاء المحاولة مرة أخرى.";
       switch (error.code) {
         case 'auth/invalid-credential':
+        case 'auth/wrong-password':
           errorMessage = "رقم الهاتف أو كلمة المرور غير صحيحة.";
           break;
         case 'auth/user-disabled':

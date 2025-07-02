@@ -59,7 +59,7 @@ export interface UserProfile {
   };
   walletBalance?: number; 
   topUpCodes?: Record<string, UserProfileTopUpCode>;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'suspended';
   createdAt: any; 
   updatedAt?: any;
 }
