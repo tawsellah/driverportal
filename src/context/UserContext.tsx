@@ -2,7 +2,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { onAuthUserChangedListener, type UserProfile } from '@/lib/firebaseService';
@@ -23,49 +23,51 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const router = useRouter();
   const { toast } = useToast();
+  // Ref to hold the profile listener unsubscribe function
+  const profileUnsubscribeRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     // This listener handles auth state changes (login/logout)
     const authUnsubscribe = onAuthUserChangedListener((user) => {
-      // Create a variable to hold the profile listener's unsubscribe function
-      let profileUnsubscribe = () => {};
+      // Detach any existing profile listener before setting up a new one
+      if (profileUnsubscribeRef.current) {
+        profileUnsubscribeRef.current();
+      }
 
       if (user) {
         setIsLoadingProfile(true);
         const userProfileRef = ref(database, `users/${user.uid}`);
         
         // Set up the real-time listener on the user's profile data
-        profileUnsubscribe = onValue(userProfileRef, (snapshot) => {
+        const profileListener = onValue(userProfileRef, (snapshot) => {
           if (snapshot.exists()) {
             const profile = snapshot.val() as UserProfile;
 
             // --- Access Control Logic for real-time changes ---
             if (profile.status === 'suspended') {
-              signOut(auth); // Sign out from Firebase Auth
-              setAuthStatus(false); // Update local storage flag
-              setUserProfile(null); // Clear profile state
-              setIsLoadingProfile(false); // Stop loading
+              signOut(auth); 
+              setAuthStatus(false);
+              setUserProfile(null); 
+              setIsLoadingProfile(false); 
               toast({
                 title: "تم تعليق الحساب",
                 description: "تم تعليق حسابك بسبب مخالفة السياسات. يرجى التواصل مع الدعم لمزيد من التفاصيل.",
                 variant: "destructive",
                 duration: 5000,
               });
-              router.push('/auth/signin'); // Redirect to sign-in page
-              return; // Stop further processing for this snapshot
+              router.push('/auth/signin'); 
+              return; 
             }
             
             setUserProfile(profile);
           } else {
-            // Profile doesn't exist in the database, which is an inconsistent state. Sign out.
-            signOut(auth);
-            setAuthStatus(false);
-            setUserProfile(null);
-            router.push('/auth/signin');
+             // Profile doesn't exist, which might be a temporary state during signup.
+             // We don't sign out here anymore to prevent logging out on refresh.
+             // The sign-in page logic will handle access control.
+             setUserProfile(null);
           }
           setIsLoadingProfile(false);
         }, (error) => {
-            // Handle potential database read errors
             console.error("Firebase onValue error:", error);
             signOut(auth);
             setAuthStatus(false);
@@ -74,20 +76,27 @@ export function UserProvider({ children }: { children: ReactNode }) {
             router.push('/auth/signin');
         });
 
+        // Store the new unsubscribe function in the ref
+        profileUnsubscribeRef.current = () => off(userProfileRef, 'value', profileListener);
+
       } else {
         // User is signed out or not present
         setUserProfile(null);
         setIsLoadingProfile(false);
+        // Ensure any lingering listener is detached
+        if (profileUnsubscribeRef.current) {
+            profileUnsubscribeRef.current();
+        }
       }
-      
-      // Return a cleanup function that detaches the profile listener when auth state changes
-      return () => {
-        off(userProfileRef, 'value');
-      };
     });
 
-    // Return the main auth listener's unsubscribe function to be called on component unmount
-    return () => authUnsubscribe();
+    // Cleanup on component unmount
+    return () => {
+        authUnsubscribe();
+        if (profileUnsubscribeRef.current) {
+            profileUnsubscribeRef.current();
+        }
+    };
   }, [router, toast]);
 
   return (

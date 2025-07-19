@@ -17,12 +17,12 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { CalendarIcon, MapPin, Clock, Users, DollarSign, PlusCircle, Trash2, Armchair, Car, Loader2, AlertCircle } from 'lucide-react';
+import { CalendarIcon, MapPin, Clock, Users, DollarSign, PlusCircle, Trash2, Armchair, Car, Loader2, AlertCircle, Wallet } from 'lucide-react';
 import { JORDAN_GOVERNORATES, SEAT_CONFIG } from '@/lib/constants';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { auth } from '@/lib/firebase';
-import { addTrip, getActiveTripForDriver, type NewTripData, getStopStationsForRoute, addStopsToRoute } from '@/lib/firebaseService';
+import { addTrip, getActiveTripForDriver, type NewTripData, getStopStationsForRoute, addStopsToRoute, getUserProfile, type UserProfile } from '@/lib/firebaseService';
 
 const tripSchema = z.object({
   startPoint: z.string().min(1, { message: "نقطة الانطلاق مطلوبة" }),
@@ -46,8 +46,9 @@ export default function CreateTripPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [isCheckingActiveTrip, setIsCheckingActiveTrip] = useState(true);
+  const [isCheckingInitialState, setIsCheckingInitialState] = useState(true);
   const [hasActiveTrip, setHasActiveTrip] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [minCalendarDate, setMinCalendarDate] = useState<Date | null>(null);
 
   // State for stop suggestions
@@ -74,23 +75,33 @@ export default function CreateTripPage() {
   const watchedDestination = watch("destination");
 
   useEffect(() => {
-    const checkActiveTrip = async () => {
+    const checkInitialState = async () => {
       const currentUser = auth.currentUser;
       if (currentUser) {
-        const activeTrip = await getActiveTripForDriver(currentUser.uid);
-        if (activeTrip) {
-          setHasActiveTrip(true);
+        try {
+          const [activeTrip, profile] = await Promise.all([
+            getActiveTripForDriver(currentUser.uid),
+            getUserProfile(currentUser.uid)
+          ]);
+          if (activeTrip) {
+            setHasActiveTrip(true);
+          }
+          setUserProfile(profile);
+        } catch (error) {
+           console.error("Error checking initial state:", error);
+           toast({ title: "خطأ في تحميل البيانات", variant: "destructive" });
+           router.push('/trips'); // Redirect if we can't load data
         }
       } else {
         router.push('/auth/signin');
       }
-      setIsCheckingActiveTrip(false);
+      setIsCheckingInitialState(false);
     };
-    checkActiveTrip();
+    checkInitialState();
     const today = new Date();
     today.setHours(0,0,0,0);
     setMinCalendarDate(today);
-  }, [router]);
+  }, [router, toast]);
 
   useEffect(() => {
     const fetchAndSetSuggestedStops = async () => {
@@ -99,19 +110,15 @@ export default function CreateTripPage() {
         if (suggestedStops && suggestedStops.length > 0) {
           const validSuggestedStops = suggestedStops.filter(stop => stop && stop.trim() !== '');
           setRouteSpecificStopSuggestions(validSuggestedStops);
-          // DO NOT automatically fill stops: replace(validSuggestedStops.map(stopName => stopName));
-          // toast({ title: "تم تحميل محطات التوقف المقترحة", description: "يمكنك تعديلها حسب الحاجة." });
         } else {
           setRouteSpecificStopSuggestions([]);
-          // DO NOT automatically clear stops if none found for the route: replace([]);
         }
       } else {
          setRouteSpecificStopSuggestions([]);
-         // DO NOT automatically clear stops if route is incomplete: replace([]);
       }
     };
     fetchAndSetSuggestedStops();
-  }, [watchedStartPoint, watchedDestination, toast]); // Removed 'replace' from dependencies as it's no longer called here
+  }, [watchedStartPoint, watchedDestination, toast]);
 
   const filteredDynamicSuggestions = useMemo(() => {
     if (!currentStopSearchTerm.trim() || !routeSpecificStopSuggestions || routeSpecificStopSuggestions.length === 0) {
@@ -132,6 +139,10 @@ export default function CreateTripPage() {
     if (hasActiveTrip) {
         toast({ title: "لا يمكنك إنشاء رحلة جديدة", description: "لديك رحلة نشطة بالفعل. قم بإنهائها أو إلغائها أولاً.", variant: "destructive" });
         return;
+    }
+    if (!userProfile || (userProfile.walletBalance || 0) <= 0) {
+      toast({ title: "رصيد المحفظة غير كافٍ", description: "يجب شحن المحفظة لتتمكن من إنشاء رحلة جديدة.", variant: "destructive" });
+      return;
     }
 
     const selectedOfferedSeatsCount = Object.values(data.offeredSeatsConfig).filter(isOffered => isOffered).length;
@@ -181,11 +192,11 @@ export default function CreateTripPage() {
   const offeredSeatsCount = Object.values(offeredSeatsConfigFromForm || {}).filter(isOffered => isOffered).length;
 
 
-  if (isCheckingActiveTrip) {
+  if (isCheckingInitialState) {
     return (
       <div className="flex justify-center items-center h-64">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ms-3">جار التحقق من الرحلات النشطة...</p>
+        <p className="ms-3">جار التحقق من البيانات...</p>
       </div>
     );
   }
@@ -201,6 +212,23 @@ export default function CreateTripPage() {
           </p>
           <Button onClick={() => router.push('/trips')} className="mt-6">
             العودة إلى رحلاتي
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+  
+  if (!userProfile || (userProfile.walletBalance || 0) <= 0) {
+    return (
+      <Card className="max-w-2xl mx-auto text-center py-10">
+        <CardContent className="flex flex-col items-center">
+          <Wallet className="w-16 h-16 text-destructive mb-4" />
+          <p className="text-xl font-semibold">رصيد المحفظة غير كافٍ</p>
+          <p className="text-muted-foreground mt-2">
+            رصيدك الحالي هو 0 أو أقل. يرجى شحن المحفظة لتتمكن من إنشاء رحلات جديدة.
+          </p>
+          <Button onClick={() => router.push('/history')} className="mt-6">
+            الانتقال إلى المحفظة
           </Button>
         </CardContent>
       </Card>
