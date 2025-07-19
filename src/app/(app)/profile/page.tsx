@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { User, Phone, Star, Briefcase, Edit3, Save, Loader2, LogOut, KeyRound, MessageSquareQuestion } from 'lucide-react';
+import { User, Phone, Star, Briefcase, Edit3, Save, Loader2, LogOut, KeyRound, MessageSquareQuote } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
@@ -356,7 +356,7 @@ export default function ProfilePage() {
               <KeyRound className="ms-2 h-4 w-4" /> تغيير كلمة المرور
           </Button>
            <Button onClick={() => setIsSupportDialogOpen(true)} variant="default" className="w-full mt-2 bg-green-500 hover:bg-green-600">
-            <MessageSquareQuestion className="ms-2 h-4 w-4" /> تواصل مع الدعم
+            <MessageSquareQuote className="ms-2 h-4 w-4" /> تواصل مع الدعم
           </Button>
            <Button onClick={handleSignOut} variant="destructive" className="w-full mt-2">
             <LogOut className="ms-2 h-4 w-4" /> تسجيل الخروج
