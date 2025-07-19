@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { User, Phone, Star, Briefcase, Edit3, Save, Loader2, LogOut, KeyRound } from 'lucide-react';
+import { User, Phone, Star, Briefcase, Edit3, Save, Loader2, LogOut, KeyRound, MessageSquareQuestion } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
@@ -18,13 +18,13 @@ import { useRouter } from 'next/navigation';
 import { 
     getUserProfile, 
     updateUserProfile, 
-    type UserProfile,
-    getSupportContactNumberFromDb
+    type UserProfile
 } from '@/lib/firebaseService'; 
 import { setAuthStatus } from '@/lib/storage';
 import { Checkbox } from "@/components/ui/checkbox";
 import { ChangePasswordDialog } from '@/components/profile/change-password-dialog';
 import { IconInput } from '@/components/shared/icon-input';
+import { SupportDialog } from '@/components/profile/support-dialog';
 
 
 const profileSchema = z.object({
@@ -73,12 +73,6 @@ async function uploadFileToImageKit(file: File): Promise<string | null> {
   }
 }
 
-const WhatsAppIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" {...props}>
-    <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm0 18.09c-1.5 0-2.96-.36-4.24-1.05L6.36 19.6l-1.02.27.27-1.02 1.44-1.44a8.08 8.08 0 0 1-1.16-4.49c0-4.53 3.69-8.21 8.21-8.21s8.21 3.69 8.21 8.21-3.69 8.21-8.21 8.21zm4.49-5.83c-.28-.14-1.64-.81-1.9-.9s-.45-.14-.64.14-.72.9-.88 1.08-.32.18-.59.06c-.28-.12-1.17-.43-2.23-1.38-.83-.73-1.38-1.63-1.54-1.9s-.17-.28-.07-.36c.08-.1.22-.22.3-.3.09-.09.12-.14.18-.24.06-.1.03-.18-.01-.32s-.64-1.54-.88-2.1c-.24-.58-.48-.48-.64-.48h-.4c-.14 0-.38.06-.59.32s-.81.78-.81 1.9c0 1.12.83 2.2 1.02 2.4s1.64 2.51 3.98 3.53c.55.24.93.38 1.25.48.52.16.99.14 1.37.08.42-.06 1.25-.51 1.42-.99.18-.49.18-.9.12-.99s-.22-.14-.49-.28z"/>
-  </svg>
-);
-
 
 export default function ProfilePage() {
   const { toast } = useToast();
@@ -88,9 +82,8 @@ export default function ProfilePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingProfile, setIsFetchingProfile] = useState(true);
   const [newPhotoFile, setNewPhotoFile] = useState<File | null>(null);
-  const [supportPhoneNumber, setSupportPhoneNumber] = useState<string | null>(null);
-  const [isLoadingSupportNumber, setIsLoadingSupportNumber] = useState(true);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [isSupportDialogOpen, setIsSupportDialogOpen] = useState(false);
 
   const { control, handleSubmit, register, reset, watch, formState: { errors } } = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
@@ -105,9 +98,8 @@ export default function ProfilePage() {
   });
 
   useEffect(() => {
-    const fetchProfileAndSupportNumber = async () => {
+    const fetchProfile = async () => {
       setIsFetchingProfile(true);
-      setIsLoadingSupportNumber(true);
       const currentUser = auth.currentUser;
       if (currentUser) {
         try {
@@ -128,18 +120,8 @@ export default function ProfilePage() {
         router.push('/auth/signin');
       }
       setIsFetchingProfile(false);
-
-      try {
-        const number = await getSupportContactNumberFromDb();
-        setSupportPhoneNumber(number);
-      } catch (error) {
-        console.error("Error fetching support phone number:", error);
-        setSupportPhoneNumber(null);
-      } finally {
-        setIsLoadingSupportNumber(false);
-      }
     };
-    fetchProfileAndSupportNumber();
+    fetchProfile();
   }, [reset, toast, router]);
 
   const paymentMethodsWatched = watch("paymentMethods");
@@ -230,6 +212,12 @@ export default function ProfilePage() {
   return (
     <div className="space-y-6">
       <ChangePasswordDialog isOpen={isChangePasswordOpen} onOpenChange={setIsChangePasswordOpen} />
+      <SupportDialog 
+        isOpen={isSupportDialogOpen} 
+        onOpenChange={setIsSupportDialogOpen}
+        userProfile={userProfile}
+      />
+      
       <Card>
         <CardHeader className="flex flex-col items-center text-center">
           <div className="relative">
@@ -367,38 +355,17 @@ export default function ProfilePage() {
           <Button onClick={() => setIsChangePasswordOpen(true)} variant="secondary" className="w-full">
               <KeyRound className="ms-2 h-4 w-4" /> تغيير كلمة المرور
           </Button>
+           <Button onClick={() => setIsSupportDialogOpen(true)} variant="default" className="w-full mt-2 bg-green-500 hover:bg-green-600">
+            <MessageSquareQuestion className="ms-2 h-4 w-4" /> تواصل مع الدعم
+          </Button>
            <Button onClick={handleSignOut} variant="destructive" className="w-full mt-2">
             <LogOut className="ms-2 h-4 w-4" /> تسجيل الخروج
-          </Button>
-          <Button
-            asChild
-            className="w-full mt-2 bg-green-500 hover:bg-green-600 text-white"
-            disabled={isLoadingSupportNumber || !supportPhoneNumber}
-            onClick={() => {
-              if (!supportPhoneNumber && !isLoadingSupportNumber) {
-                toast({ title: "رقم الدعم غير متوفر حالياً", variant: "destructive" });
-              }
-            }}
-          >
-            <a
-              href={supportPhoneNumber ? `https://wa.me/${String(supportPhoneNumber).replace(/^\+/, '')}` : '#'}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2"
-            >
-              {isLoadingSupportNumber ? (
-                <Loader2 className="animate-spin h-5 w-5" />
-              ) : (
-                <>
-                  <WhatsAppIcon className="h-5 w-5" />
-                  <span>تواصل مع الدعم</span>
-                </>
-              )}
-            </a>
           </Button>
         </CardFooter>
       </Card>
     </div>
   );
 }
+    
+
     

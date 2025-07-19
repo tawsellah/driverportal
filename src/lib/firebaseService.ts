@@ -25,6 +25,7 @@ export interface PassengerBookingDetails {
   bookedAt: any; 
   paymentType?: string; // e.g., "cash", "click"
   dropOffPoint?: string; // e.g., "Stop Name 1"
+  fees?: number; // Added fees
 }
 
 export interface UserProfileTopUpCode {
@@ -102,6 +103,16 @@ export interface Trip {
 }
 
 export type NewTripData = Omit<Trip, 'id' | 'status' | 'earnings' | 'driverId' | 'createdAt' | 'updatedAt'>;
+
+export interface SupportRequestData {
+  userId: string;
+  fullName: string;
+  phone: string;
+  message: string;
+  status?: 'new' | 'in_progress' | 'resolved';
+  createdAt?: any;
+}
+
 
 // --- Auth Service ---
 export const getCurrentUser = (): FirebaseAuthUser | null => {
@@ -313,6 +324,7 @@ export const chargeWalletWithCode = async (
 const CURRENT_TRIPS_PATH = 'currentTrips';
 const FINISHED_TRIPS_PATH = 'finishedTrips';
 const STOP_STATIONS_PATH = 'stopstations';
+const SUPPORT_REQUESTS_PATH = 'supportRequests';
 
 
 export const addTrip = async (driverId: string, tripData: NewTripData): Promise<Trip> => {
@@ -587,6 +599,60 @@ export const getTrips = async (): Promise<Trip[]> => {
   return trips;
 };
 
+// --- Booking Cancellation Service ---
+export const cancelPassengerBooking = async (tripId: string, seatId: SeatID): Promise<{ success: boolean; message: string }> => {
+  const tripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
+
+  try {
+    const transactionResult = await runTransaction(tripRef, (currentTripData: Trip | null) => {
+      if (currentTripData === null) {
+        throw new Error("TRIP_NOT_FOUND");
+      }
+      
+      const bookingDetails = currentTripData.offeredSeatsConfig?.[seatId] as PassengerBookingDetails | undefined;
+      if (!bookingDetails || typeof bookingDetails !== 'object') {
+        throw new Error("BOOKING_NOT_FOUND");
+      }
+
+      // Default fee is 0.20 if not found, for backward compatibility.
+      const feeToRefund = bookingDetails.fees ?? 0.20;
+
+      // Update driver's wallet in a separate transaction for atomicity
+      const driverProfileRef = ref(databaseInternal, `users/${currentTripData.driverId}`);
+      runTransaction(driverProfileRef, (currentProfile: UserProfile | null) => {
+          if (currentProfile) {
+            currentProfile.walletBalance = (currentProfile.walletBalance || 0) + feeToRefund;
+            currentProfile.updatedAt = serverTimestamp();
+          }
+          return currentProfile;
+      }).catch(err => console.error("Failed to refund driver's wallet:", err));
+
+      // Reset the seat to available
+      currentTripData.offeredSeatsConfig[seatId] = true;
+      currentTripData.updatedAt = serverTimestamp();
+
+      return currentTripData;
+    });
+
+    if (transactionResult.committed) {
+      return { success: true, message: "تم إلغاء حجز الراكب بنجاح وإعادة الرسوم." };
+    } else {
+      return { success: false, message: "فشل إلغاء الحجز بسبب تنازع في البيانات. يرجى المحاولة مرة أخرى." };
+    }
+
+  } catch (error: any) {
+    console.error("Error during cancelPassengerBooking transaction:", error);
+    if (error.message === 'TRIP_NOT_FOUND') {
+       return { success: false, message: "لم يتم العثور على الرحلة." };
+    }
+    if (error.message === 'BOOKING_NOT_FOUND') {
+       return { success: false, message: "لم يتم العثور على الحجز المحدد." };
+    }
+    return { success: false, message: "حدث خطأ أثناء إلغاء الحجز." };
+  }
+};
+
+
 // --- Stop Stations Service ---
 export const generateRouteKey = (startPointId: string, destinationId: string): string => {
   return `${startPointId.toLowerCase()}_to_${destinationId.toLowerCase()}`;
@@ -637,13 +703,16 @@ export const addStopsToRoute = async (startPointId: string, destinationId: strin
   console.log(`Stops for route ${routeKey} updated:`, uniqueStopsArray);
 };
 
-// --- App Settings Service ---
-export const getSupportContactNumberFromDb = async (): Promise<string | null> => {
-  const settingRef = ref(databaseInternal, 'support/contactPhoneNumber/contact');
-  const snapshot = await get(settingRef);
-  if (snapshot.exists()) {
-    return snapshot.val() as string;
-  }
-  console.warn("Support contact phone number not found at 'support/contactPhoneNumber/contact'");
-  return null;
+// --- Support Service ---
+export const submitSupportRequest = async (data: Omit<SupportRequestData, 'status' | 'createdAt'>): Promise<void> => {
+    const supportRequestsRef = ref(databaseInternal, SUPPORT_REQUESTS_PATH);
+    const newRequestRef = push(supportRequestsRef);
+    const requestData: SupportRequestData = {
+        ...data,
+        status: 'new',
+        createdAt: serverTimestamp(),
+    };
+    await set(newRequestRef, requestData);
 };
+
+    
