@@ -83,7 +83,7 @@ export default function SignInPage() {
       switch (error.code) {
         case 'auth/invalid-credential':
         case 'auth/wrong-password':
-          errorMessage = "رقم الهاتف أو كلمة المرور غير صحيحة.";
+          errorMessage = "بيانات الاعتماد غير صحيحة. يرجى التحقق من رقم الهاتف وكلمة المرور.";
           break;
         case 'auth/user-disabled':
           errorMessage = "تم تعطيل هذا الحساب. يرجى التواصل مع الدعم.";
