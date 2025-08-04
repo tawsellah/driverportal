@@ -116,32 +116,34 @@ export default function SignInPage() {
     <div className="form-card">
       <h2 className="mb-6 text-center text-2xl font-bold">تسجيل الدخول</h2>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div>
-          <Label htmlFor="phone">رقم الهاتف</Label>
-          <IconInput
-            id="phone"
-            type="tel"
-            icon={Phone}
-            placeholder="أدخل رقم هاتفك"
-            {...register('phone')}
-            className={errors.phone ? 'border-destructive' : ''}
-            aria-invalid={errors.phone ? "true" : "false"}
-          />
-          {errors.phone && <p className="mt-1 text-sm text-destructive">{errors.phone.message}</p>}
-        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="phone">رقم الهاتف</Label>
+            <IconInput
+              id="phone"
+              type="tel"
+              icon={Phone}
+              placeholder="أدخل رقم هاتفك"
+              {...register('phone')}
+              className={errors.phone ? 'border-destructive' : ''}
+              aria-invalid={errors.phone ? "true" : "false"}
+            />
+            {errors.phone && <p className="mt-1 text-sm text-destructive">{errors.phone.message}</p>}
+          </div>
 
-        <div>
-          <Label htmlFor="password">كلمة المرور</Label>
-          <IconInput
-            id="password"
-            type="password"
-            icon={Lock}
-            placeholder="أدخل كلمة المرور"
-            {...register('password')}
-            className={errors.password ? 'border-destructive' : ''}
-            aria-invalid={errors.password ? "true" : "false"}
-          />
-          {errors.password && <p className="mt-1 text-sm text-destructive">{errors.password.message}</p>}
+          <div>
+            <Label htmlFor="password">كلمة المرور</Label>
+            <IconInput
+              id="password"
+              type="password"
+              icon={Lock}
+              placeholder="أدخل كلمة المرور"
+              {...register('password')}
+              className={errors.password ? 'border-destructive' : ''}
+              aria-invalid={errors.password ? "true" : "false"}
+            />
+            {errors.password && <p className="mt-1 text-sm text-destructive">{errors.password.message}</p>}
+          </div>
         </div>
         
         <div className="text-right">
