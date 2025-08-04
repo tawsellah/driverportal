@@ -125,7 +125,7 @@ export default function SignInPage() {
               icon={Phone}
               placeholder="أدخل رقم هاتفك"
               {...register('phone')}
-              className={errors.phone ? 'border-destructive' : ''}
+              className={`text-right ${errors.phone ? 'border-destructive' : ''}`}
               aria-invalid={errors.phone ? "true" : "false"}
             />
             {errors.phone && <p className="mt-1 text-sm text-destructive">{errors.phone.message}</p>}
@@ -139,7 +139,7 @@ export default function SignInPage() {
               icon={Lock}
               placeholder="أدخل كلمة المرور"
               {...register('password')}
-              className={errors.password ? 'border-destructive' : ''}
+              className={`text-right ${errors.password ? 'border-destructive' : ''}`}
               aria-invalid={errors.password ? "true" : "false"}
             />
             {errors.password && <p className="mt-1 text-sm text-destructive">{errors.password.message}</p>}
