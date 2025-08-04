@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { User, Phone, Star, Briefcase, Edit3, Save, Loader2, LogOut, KeyRound, MessageSquareQuote } from 'lucide-react';
+import { User, Phone, Star, Briefcase, Edit3, Save, Loader2, LogOut, KeyRound } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
@@ -24,7 +24,6 @@ import { setAuthStatus } from '@/lib/storage';
 import { Checkbox } from "@/components/ui/checkbox";
 import { ChangePasswordDialog } from '@/components/profile/change-password-dialog';
 import { IconInput } from '@/components/shared/icon-input';
-import { SupportDialog } from '@/components/profile/support-dialog';
 
 
 const profileSchema = z.object({
@@ -83,7 +82,6 @@ export default function ProfilePage() {
   const [isFetchingProfile, setIsFetchingProfile] = useState(true);
   const [newPhotoFile, setNewPhotoFile] = useState<File | null>(null);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
-  const [isSupportDialogOpen, setIsSupportDialogOpen] = useState(false);
 
   const { control, handleSubmit, register, reset, watch, formState: { errors } } = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
@@ -212,11 +210,6 @@ export default function ProfilePage() {
   return (
     <div className="space-y-6">
       <ChangePasswordDialog isOpen={isChangePasswordOpen} onOpenChange={setIsChangePasswordOpen} />
-      <SupportDialog 
-        isOpen={isSupportDialogOpen} 
-        onOpenChange={setIsSupportDialogOpen}
-        userProfile={userProfile}
-      />
       
       <Card>
         <CardHeader className="flex flex-col items-center text-center">
@@ -355,9 +348,6 @@ export default function ProfilePage() {
           <Button onClick={() => setIsChangePasswordOpen(true)} variant="secondary" className="w-full">
               <KeyRound className="ms-2 h-4 w-4" /> تغيير كلمة المرور
           </Button>
-           <Button onClick={() => setIsSupportDialogOpen(true)} variant="default" className="w-full mt-2 bg-green-500 hover:bg-green-600">
-            <MessageSquareQuote className="ms-2 h-4 w-4" /> تواصل مع الدعم
-          </Button>
            <Button onClick={handleSignOut} variant="destructive" className="w-full mt-2">
             <LogOut className="ms-2 h-4 w-4" /> تسجيل الخروج
           </Button>
@@ -369,3 +359,4 @@ export default function ProfilePage() {
     
 
     
+
