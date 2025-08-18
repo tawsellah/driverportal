@@ -572,7 +572,6 @@ export const endTrip = async (tripToEnd: Trip, earnings: number): Promise<void> 
     await runTransaction(userProfileRef, (currentProfile: UserProfile | null) => {
       if (currentProfile) {
         currentProfile.tripsCount = (currentProfile.tripsCount || 0) + 1;
-        // currentProfile.walletBalance = (currentProfile.walletBalance || 0) + earnings; // Removed this line
         currentProfile.updatedAt = serverTimestamp();
       }
       return currentProfile;
@@ -714,5 +713,3 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
     };
     await set(newRequestRef, requestData);
 };
-
-    
