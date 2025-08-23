@@ -172,6 +172,21 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
   return null;
 };
 
+export const getUserByPhone = async (phone: string): Promise<UserProfile | null> => {
+    const usersRef = ref(databaseInternal, 'users');
+    const phoneQuery = query(usersRef, orderByChild('phone'), equalTo(phone));
+    const snapshot = await get(phoneQuery);
+    if (snapshot.exists()) {
+        let userProfile: UserProfile | null = null;
+        // The result is a map of userId -> profile
+        snapshot.forEach((childSnapshot) => {
+            userProfile = childSnapshot.val() as UserProfile;
+        });
+        return userProfile;
+    }
+    return null;
+};
+
 export const updateUserProfile = async (userId: string, updates: Partial<UserProfile>): Promise<void> => {
   const userRef = ref(databaseInternal, `users/${userId}`);
   await update(userRef, {...updates, updatedAt: serverTimestamp()});
@@ -184,15 +199,16 @@ export const createDriverAccount = async (
     if (!auth) {
         throw new Error("Firebase Auth is not initialized.");
     }
-    const email = profileData.email;
+    // Use the FAKE email for auth creation, but the REAL email is in profileData
+    const authEmail = `t${profileData.phone}@tawsellah.com`;
 
     // Step 1: Create user in Firebase Auth
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const userCredential = await createUserWithEmailAndPassword(auth, authEmail, password);
     const userId = userCredential.user.uid;
 
     // Step 2: Prepare and save user profile data to Realtime Database
     const finalProfileData = {
-        ...profileData,
+        ...profileData, // This includes the real email
         rating: 5, // Default rating
         tripsCount: 0,
         walletBalance: 0,
@@ -571,6 +587,7 @@ export const endTrip = async (tripToEnd: Trip, earnings: number): Promise<void> 
     await runTransaction(userProfileRef, (currentProfile: UserProfile | null) => {
       if (currentProfile) {
         currentProfile.tripsCount = (currentProfile.tripsCount || 0) + 1;
+        // Do NOT add to walletBalance here.
         currentProfile.updatedAt = serverTimestamp();
       }
       return currentProfile;
