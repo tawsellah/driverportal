@@ -174,18 +174,18 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 
 export const getUserByPhone = async (phone: string): Promise<UserProfile | null> => {
     const usersRef = ref(databaseInternal, 'users');
-    const phoneQuery = query(usersRef, orderByChild('phone'), equalTo(phone));
-    const snapshot = await get(phoneQuery);
+    const snapshot = await get(usersRef);
     if (snapshot.exists()) {
-        let userProfile: UserProfile | null = null;
-        // The result is a map of userId -> profile
-        snapshot.forEach((childSnapshot) => {
-            userProfile = childSnapshot.val() as UserProfile;
-        });
-        return userProfile;
+        const users = snapshot.val();
+        for (const userId in users) {
+            if (users[userId].phone === phone) {
+                return users[userId] as UserProfile;
+            }
+        }
     }
     return null;
 };
+
 
 export const updateUserProfile = async (userId: string, updates: Partial<UserProfile>): Promise<void> => {
   const userRef = ref(databaseInternal, `users/${userId}`);
