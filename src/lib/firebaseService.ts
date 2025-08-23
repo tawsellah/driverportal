@@ -178,13 +178,13 @@ export const updateUserProfile = async (userId: string, updates: Partial<UserPro
 };
 
 export const createDriverAccount = async (
-  profileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt' | 'email' | 'status'>,
+  profileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt' | 'status'>,
   password: string
 ): Promise<string> => {
     if (!auth) {
         throw new Error("Firebase Auth is not initialized.");
     }
-    const email = `t${profileData.phone}@tawsellah.com`;
+    const email = profileData.email;
 
     // Step 1: Create user in Firebase Auth
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -193,7 +193,6 @@ export const createDriverAccount = async (
     // Step 2: Prepare and save user profile data to Realtime Database
     const finalProfileData = {
         ...profileData,
-        email,
         rating: 5, // Default rating
         tripsCount: 0,
         walletBalance: 0,
@@ -578,8 +577,6 @@ export const endTrip = async (tripToEnd: Trip, earnings: number): Promise<void> 
     });
   } catch (error) {
      console.error(`Transaction failed for updating user profile ${tripToEnd.driverId}: `, error);
-     // Decide if you want to throw an error or proceed. For now, proceeding.
-     // throw new Error("Failed to update driver's profile and wallet during endTrip.");
   }
   
   await set(finishedTripRef, finishedTripData);

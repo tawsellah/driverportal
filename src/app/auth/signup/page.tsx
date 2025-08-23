@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { UserPlus, ArrowLeft, User, Phone, Lock, CreditCard, Car, ImageIcon, CalendarDays, Palette, Hash, Loader2 } from 'lucide-react';
+import { UserPlus, ArrowLeft, User, Phone, Lock, CreditCard, Car, ImageIcon, CalendarDays, Palette, Hash, Loader2, Mail } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { IconInput as OriginalIconInputComponent } from '@/components/shared/icon-input';
@@ -24,6 +24,7 @@ const signUpSchema = z.object({
   fullName: z.string().min(3, { message: "الاسم الكامل مطلوب." }),
   phone: z.string().regex(/^07[789]\d{7}$/, { message: "رقم هاتف أردني غير صالح (مثال: 0791234567)." }),
   secondaryPhone: z.string().regex(/^07[789]\d{7}$/, { message: "رقم هاتف أردني غير صالح." }).optional().or(z.literal('')),
+  email: z.string().email({ message: "الرجاء إدخال بريد إلكتروني صالح." }),
   password: z.string().min(6, { message: "كلمة المرور يجب أن تكون 6 أحرف على الأقل." }),
   idNumber: z.string().regex(/^[A-Z0-9]{8}$/, { message: "رقم الهوية يجب أن يتكون من 8 أحرف إنجليزية كبيرة وأرقام." }),
   idPhoto: z.any().refine(files => files?.length > 0, { message: "الصورة الشخصية مطلوبة." }),
@@ -123,9 +124,10 @@ export default function SignUpPage() {
         throw new Error("فشل رفع صورة واحدة أو أكثر. الرجاء المحاولة مرة أخرى.");
       }
       
-      const profileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt' | 'email' | 'status'> = {
+      const profileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt' | 'status'> = {
         fullName: data.fullName,
         phone: data.phone,
+        email: data.email,
         secondaryPhone: data.secondaryPhone || '',
         idNumber: data.idNumber,
         idPhotoUrl: idPhotoUrl,
@@ -156,7 +158,7 @@ export default function SignUpPage() {
       console.error("Signup Error:", error);
       let errorMessage = "حدث خطأ أثناء إنشاء الحساب.";
        if (error.code === 'auth/email-already-in-use') {
-          errorMessage = "رقم الهاتف هذا مسجل بالفعل. يرجى استخدام رقم آخر أو تسجيل الدخول.";
+          errorMessage = "هذا البريد الإلكتروني مسجل بالفعل. يرجى استخدام بريد آخر أو تسجيل الدخول.";
       } else if (error.message) {
         errorMessage = error.message;
       }
@@ -206,6 +208,11 @@ export default function SignUpPage() {
                   <Label htmlFor="secondaryPhone">رقم هاتف إضافي (اختياري)</Label>
                   <IconInput icon={Phone} id="secondaryPhone" type="tel" {...register('secondaryPhone')} error={errors.secondaryPhone?.message} />
                   {errors.secondaryPhone && <p className="mt-1 text-sm text-destructive">{errors.secondaryPhone.message}</p>}
+                </div>
+                 <div>
+                  <Label htmlFor="email">البريد الإلكتروني <span className="text-destructive">*</span></Label>
+                  <IconInput icon={Mail} id="email" type="email" {...register('email')} error={errors.email?.message} />
+                  {errors.email && <p className="mt-1 text-sm text-destructive">{errors.email.message}</p>}
                 </div>
                 <div>
                   <Label htmlFor="password">كلمة المرور <span className="text-destructive">*</span></Label>

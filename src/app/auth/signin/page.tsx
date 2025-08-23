@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Phone, Lock, LogIn, ArrowLeft, Loader2 } from 'lucide-react';
+import { Mail, Lock, LogIn, ArrowLeft, Loader2 } from 'lucide-react';
 import { IconInput } from '@/components/shared/icon-input';
 import { auth } from '@/lib/firebase';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
@@ -19,7 +19,7 @@ import { setAuthStatus } from '@/lib/storage';
 import { getUserProfile } from '@/lib/firebaseService';
 
 const signInSchema = z.object({
-  phone: z.string().regex(/^07[789]\d{7}$/, { message: "الرجاء إدخال رقم هاتف أردني صحيح." }),
+  email: z.string().email({ message: "الرجاء إدخال بريد إلكتروني صالح." }),
   password: z.string().min(6, { message: "كلمة المرور يجب أن تكون 6 أحرف على الأقل." }),
 });
 
@@ -36,10 +36,9 @@ export default function SignInPage() {
 
   const onSubmit: SubmitHandler<SignInFormValues> = async (data) => {
     setIsLoading(true);
-    const constructedEmail = `t${data.phone}@tawsellah.com`;
-
+    
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, constructedEmail, data.password);
+      const userCredential = await signInWithEmailAndPassword(auth, data.email, data.password);
       const user = userCredential.user;
       
       const profile = await getUserProfile(user.uid);
@@ -83,7 +82,7 @@ export default function SignInPage() {
       switch (error.code) {
         case 'auth/invalid-credential':
         case 'auth/wrong-password':
-          errorMessage = "بيانات الاعتماد غير صحيحة. يرجى التحقق من رقم الهاتف وكلمة المرور.";
+          errorMessage = "بيانات الاعتماد غير صحيحة. يرجى التحقق من البريد الإلكتروني وكلمة المرور.";
           break;
         case 'auth/user-disabled':
           errorMessage = "تم تعطيل هذا الحساب. يرجى التواصل مع الدعم.";
@@ -108,7 +107,7 @@ export default function SignInPage() {
     e.preventDefault();
     toast({
         title: "قيد التطوير",
-        description: "ميزة استعادة كلمة المرور غير متوفرة حاليًا.",
+        description: "ميزة استعادة كلمة المرور غير متوفرة حاليًا. يمكنك استخدام ميزة 'نسيت كلمة المرور' في Firebase.",
     });
   };
 
@@ -118,17 +117,17 @@ export default function SignInPage() {
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="phone">رقم الهاتف</Label>
+            <Label htmlFor="email">البريد الإلكتروني</Label>
             <IconInput
-              id="phone"
-              type="tel"
-              icon={Phone}
-              placeholder="أدخل رقم هاتفك"
-              {...register('phone')}
-              className={`text-right ${errors.phone ? 'border-destructive' : ''}`}
-              aria-invalid={errors.phone ? "true" : "false"}
+              id="email"
+              type="email"
+              icon={Mail}
+              placeholder="أدخل بريدك الإلكتروني"
+              {...register('email')}
+              className={`text-right ${errors.email ? 'border-destructive' : ''}`}
+              aria-invalid={errors.email ? "true" : "false"}
             />
-            {errors.phone && <p className="mt-1 text-sm text-destructive">{errors.phone.message}</p>}
+            {errors.email && <p className="mt-1 text-sm text-destructive">{errors.email.message}</p>}
           </div>
 
           <div>
