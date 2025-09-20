@@ -155,7 +155,7 @@ export default function SignUpPage() {
             licenseExpiry: data.licenseExpiry,
             licensePhotoUrl: licensePhotoUrl,
             vehicleType: data.vehicleType,
-            otherVehicleType: data.vehicleType === 'other' ? data.otherVehicleType : '',
+            otherVehicleType: data.otherVehicleType,
             vehicleYear: data.year,
             vehicleColor: data.color,
             vehiclePlateNumber: data.plateNumber,
@@ -199,7 +199,7 @@ export default function SignUpPage() {
     <div className="form-card mb-10 w-full max-w-2xl">
         <h2 className="mb-2 text-center text-2xl font-bold">إنشاء حساب سائق جديد</h2>
         <div className="mb-4 text-center text-muted-foreground">
-            <p className="font-semibold text-lg">{`الخطوة ${currentStep + 1} من ${steps.length}`}</p>
+             <p className="font-semibold text-lg">{`الخطوة ${currentStep + 1} من ${steps.length}`}</p>
             <p>{steps[currentStep].title}</p>
         </div>
         
