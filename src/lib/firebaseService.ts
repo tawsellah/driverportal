@@ -47,6 +47,7 @@ export interface UserProfile {
   licenseExpiry?: string;
   licensePhotoUrl?: string | null; 
   vehicleType?: string;
+  otherVehicleType?: string;
   vehicleYear?: string;
   vehicleColor?: string;
   vehiclePlateNumber?: string;
@@ -199,28 +200,49 @@ export const createDriverAccount = async (
     if (!auth) {
         throw new Error("Firebase Auth is not initialized.");
     }
-    // Use the FAKE email for auth creation, but the REAL email is in profileData
     const authEmail = `t${profileData.phone}@tawsellah.com`;
 
-    // Step 1: Create user in Firebase Auth
-    const userCredential = await createUserWithEmailAndPassword(auth, authEmail, password);
-    const userId = userCredential.user.uid;
+    let userId: string | null = null;
+    try {
+        const userCredential = await createUserWithEmailAndPassword(auth, authEmail, password);
+        userId = userCredential.user.uid;
 
-    // Step 2: Prepare and save user profile data to Realtime Database
-    const finalProfileData = {
-        ...profileData, // This includes the real email
-        rating: 5, // Default rating
-        tripsCount: 0,
-        walletBalance: 0,
-        status: 'pending' as const,
-    };
-    
-    await saveUserProfile(userId, finalProfileData);
-
-    // Sign out the user immediately after account creation
-    await firebaseSignOut(auth);
-    
-    return userId;
+        const finalProfileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt'> = {
+            fullName: profileData.fullName,
+            phone: profileData.phone,
+            email: profileData.email,
+            secondaryPhone: profileData.secondaryPhone || '',
+            idNumber: profileData.idNumber,
+            idPhotoUrl: profileData.idPhotoUrl,
+            licenseNumber: profileData.licenseNumber,
+            licenseExpiry: profileData.licenseExpiry,
+            licensePhotoUrl: profileData.licensePhotoUrl,
+            vehicleType: profileData.vehicleType,
+            otherVehicleType: profileData.otherVehicleType || '',
+            vehicleYear: profileData.vehicleYear,
+            vehicleColor: profileData.vehicleColor,
+            vehiclePlateNumber: profileData.vehiclePlateNumber,
+            vehiclePhotosUrl: profileData.vehiclePhotosUrl,
+            paymentMethods: { cash: true, click: false, clickCode: '' },
+            rating: 5,
+            tripsCount: 0,
+            walletBalance: 0,
+            status: 'pending' as const,
+        };
+        
+        await saveUserProfile(userId, finalProfileData);
+        await firebaseSignOut(auth);
+        
+        return userId;
+    } catch (error) {
+        if (userId) {
+            const user = auth.currentUser;
+            if (user && user.uid === userId) {
+                await user.delete();
+            }
+        }
+        throw error;
+    }
 };
 
 export const addDriverToWaitingList = async (

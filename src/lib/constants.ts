@@ -17,6 +17,7 @@ export const VEHICLE_TYPES = [
   { id: 'sedan', name: 'سيدان' },
   { id: 'suv', name: 'SUV' },
   { id: 'minibus', name: 'باص صغير' },
+  { id: 'other', name: 'غير ذلك' },
 ];
 
 export const SEAT_CONFIG = {
