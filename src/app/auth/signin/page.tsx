@@ -151,7 +151,7 @@ export default function SignInPage() {
     <div className="form-card">
       <h2 className="mb-6 text-center text-2xl font-bold">تسجيل الدخول</h2>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-4">
           <div>
             <Label htmlFor="phone">رقم الهاتف</Label>
             <IconInput

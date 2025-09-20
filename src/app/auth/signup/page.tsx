@@ -134,63 +134,63 @@ export default function SignUpPage() {
     setIsLoading(true);
 
     try {
-      const [idPhotoUrl, licensePhotoUrl, vehiclePhotoUrl] = await Promise.all([
-        uploadFileToImageKitHelper(data.idPhoto?.[0]),
-        uploadFileToImageKitHelper(data.licensePhoto?.[0]),
-        uploadFileToImageKitHelper(data.vehiclePhoto?.[0]),
-      ]);
+        const [idPhotoUrl, licensePhotoUrl, vehiclePhotoUrl] = await Promise.all([
+            uploadFileToImageKitHelper(data.idPhoto?.[0]),
+            uploadFileToImageKitHelper(data.licensePhoto?.[0]),
+            uploadFileToImageKitHelper(data.vehiclePhoto?.[0]),
+        ]);
 
-      if (!idPhotoUrl || !licensePhotoUrl || !vehiclePhotoUrl) {
-        throw new Error("فشل رفع صورة واحدة أو أكثر. الرجاء المحاولة مرة أخرى.");
-      }
-      
-      const profileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt' | 'status'> = {
-        fullName: data.fullName,
-        phone: data.phone,
-        email: data.email,
-        secondaryPhone: data.secondaryPhone,
-        idNumber: data.idNumber,
-        idPhotoUrl: idPhotoUrl,
-        licenseNumber: data.licenseNumber,
-        licenseExpiry: data.licenseExpiry,
-        licensePhotoUrl: licensePhotoUrl,
-        vehicleType: data.vehicleType,
-        otherVehicleType: data.vehicleType === 'other' ? data.otherVehicleType : '',
-        vehicleYear: data.year,
-        vehicleColor: data.color,
-        vehiclePlateNumber: data.plateNumber,
-        vehiclePhotosUrl: vehiclePhotoUrl,
-        paymentMethods: { cash: true, click: false, clickCode: '' },
-        rating: 5,
-        tripsCount: 0,
-        walletBalance: 0,
-      };
+        if (!idPhotoUrl || !licensePhotoUrl || !vehiclePhotoUrl) {
+            throw new Error("فشل رفع صورة واحدة أو أكثر. الرجاء المحاولة مرة أخرى.");
+        }
 
-      await createDriverAccount(profileData, data.password);
+        const profileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt' | 'status'> = {
+            fullName: data.fullName,
+            phone: data.phone,
+            email: data.email,
+            secondaryPhone: data.secondaryPhone || '',
+            idNumber: data.idNumber,
+            idPhotoUrl: idPhotoUrl,
+            licenseNumber: data.licenseNumber,
+            licenseExpiry: data.licenseExpiry,
+            licensePhotoUrl: licensePhotoUrl,
+            vehicleType: data.vehicleType,
+            otherVehicleType: data.vehicleType === 'other' ? data.otherVehicleType : '',
+            vehicleYear: data.year,
+            vehicleColor: data.color,
+            vehiclePlateNumber: data.plateNumber,
+            vehiclePhotosUrl: vehiclePhotoUrl,
+            paymentMethods: { cash: true, click: false, clickCode: '' },
+            rating: 5,
+            tripsCount: 0,
+            walletBalance: 0,
+        };
 
-      toast({
-        title: "تم استلام طلب التسجيل بنجاح",
-        description: "سيتم مراجعة طلبك والموافقة على حسابك في أقرب وقت ممكن.",
-      });
-      router.push('/auth/signin');
+        await createDriverAccount(profileData, data.password);
+
+        toast({
+            title: "تم استلام طلب التسجيل بنجاح",
+            description: "سيتم مراجعة طلبك والموافقة على حسابك في أقرب وقت ممكن.",
+        });
+        router.push('/auth/signin');
 
     } catch (error: any) {
-      console.error("Signup Error:", error);
-      let errorMessage = "حدث خطأ أثناء إنشاء الحساب. الرجاء المحاولة مرة أخرى.";
-      if (error.code === 'auth/email-already-in-use') {
-          errorMessage = "رقم الهاتف هذا مسجل بالفعل. يرجى استخدام رقم آخر أو تسجيل الدخول.";
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      toast({
-        title: "خطأ في التسجيل",
-        description: errorMessage,
-        variant: "destructive",
-      });
+        console.error("Signup Error:", error);
+        let errorMessage = "حدث خطأ أثناء إنشاء الحساب. الرجاء المحاولة مرة أخرى.";
+        if (error.code === 'auth/email-already-in-use') {
+            errorMessage = "رقم الهاتف هذا مسجل بالفعل. يرجى استخدام رقم آخر أو تسجيل الدخول.";
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        toast({
+            title: "خطأ في التسجيل",
+            description: errorMessage,
+            variant: "destructive",
+        });
     } finally {
         setIsLoading(false);
     }
-  };
+};
   
   const progressValue = useMemo(() => ((currentStep + 1) / steps.length) * 100, [currentStep]);
 
@@ -198,7 +198,10 @@ export default function SignUpPage() {
   return (
     <div className="form-card mb-10 w-full max-w-2xl">
         <h2 className="mb-2 text-center text-2xl font-bold">إنشاء حساب سائق جديد</h2>
-        <p className="mb-4 text-center text-muted-foreground">{steps[currentStep].title}</p>
+        <div className="mb-4 text-center text-muted-foreground">
+            <p className="font-semibold text-lg">{`الخطوة ${currentStep + 1} من ${steps.length}`}</p>
+            <p>{steps[currentStep].title}</p>
+        </div>
         
         <Progress value={progressValue} className="mb-6 h-2" />
 
