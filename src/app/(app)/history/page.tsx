@@ -118,8 +118,9 @@ export default function HistoryPage() {
   const fetchInitialData = useCallback(async (userId: string, initialLoad: boolean = true) => {
     if (initialLoad) setIsLoading(true);
     try {
+      // Trips are disabled, profile is enabled
       const [trips, profile] = await Promise.all([
-        getCompletedTripsForDriver(userId),
+        Promise.resolve([] as Trip[]), // getCompletedTripsForDriver(userId),
         getUserProfile(userId)
       ]);
       setAllTrips(trips);
@@ -148,29 +149,6 @@ export default function HistoryPage() {
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
-    const refreshCompletedTrips = async () => {
-      if (currentUserId) {
-        try {
-          const trips = await getCompletedTripsForDriver(currentUserId);
-          setAllTrips(trips);
-        } catch (error) {
-          console.warn("Polling completed trips failed:", error);
-        }
-      }
-    };
-
-    if (currentUserId) {
-      intervalId = setInterval(refreshCompletedTrips, 60000); // Poll every 60 seconds
-    }
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
-  }, [currentUserId]);
-
-  useEffect(() => {
-    let intervalId: NodeJS.Timeout | null = null;
     const pollWalletBalance = async () => {
       if (currentUserId) {
         try {
@@ -194,6 +172,7 @@ export default function HistoryPage() {
     };
   }, [currentUserId]);
 
+
   const handleChargeWallet = async () => {
     if (!chargeCodeInput.trim()) {
       toast({ title: "الرجاء إدخال كود الشحن", variant: "destructive" });
@@ -216,17 +195,7 @@ export default function HistoryPage() {
 
     if (result.success) {
       if (result.newBalance !== undefined) {
-        if (userProfile) { 
           setUserProfile(prev => prev ? ({ ...prev, walletBalance: result.newBalance! }) : null);
-        } else { 
-          try {
-            const freshProfile = await getUserProfile(currentUserId);
-            setUserProfile(freshProfile);
-          } catch (e) {
-            console.error("Failed to refetch profile after successful charge when local was null", e);
-            toast({title:"خطأ", description: "تم شحن الرصيد ولكن حدث خطأ في تحديث عرض الرصيد. حاول تحديث الصفحة.", variant: "destructive"});
-          }
-        }
       }
       setChargeCodeInput(''); 
     }

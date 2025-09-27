@@ -2,6 +2,7 @@
 "use client";
 
 import { auth as authInternal , database as databaseInternal } from './firebase'; 
+import { database as walletDatabaseInternal } from './firebaseWallet';
 import { 
   onAuthStateChanged,
   type User as FirebaseAuthUser,
@@ -9,6 +10,8 @@ import {
   reauthenticateWithCredential,
   updatePassword,
   createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut as firebaseSignOut
 } from 'firebase/auth';
 import { ref, set, get, child, update, remove, query, orderByChild, equalTo, serverTimestamp, runTransaction, push } from 'firebase/database';
@@ -63,6 +66,7 @@ export interface UserProfile {
   createdAt: any; 
   updatedAt?: any;
 }
+
 
 export interface WaitingListDriverProfile {
   fullName: string;
@@ -148,12 +152,23 @@ export const saveUserProfile = async (userId: string, profileData: Omit<UserProf
     id: userId,
     ...profileData,
     status: profileData.status || 'pending',
-    walletBalance: profileData.walletBalance || 0, 
+    walletBalance: profileData.walletBalance || 0,
     topUpCodes: profileData.topUpCodes || {},
     createdAt: serverTimestamp(),
   };
   await set(userRef, fullProfileData);
 };
+
+export const getWalletData = async (userId: string): Promise<{walletBalance: number} | null> => {
+    if (!walletDatabaseInternal) return null;
+    const walletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
+    const snapshot = await get(walletRef);
+    if (snapshot.exists()) {
+        return snapshot.val();
+    }
+    return { walletBalance: 0 };
+};
+
 
 export const getUserProfile = async (userId: string): Promise<UserProfile | null> => {
   if (!databaseInternal) return null;
@@ -162,9 +177,10 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
   if (snapshot.exists()) {
     const profile = snapshot.val() as UserProfile;
     
-    if (profile.walletBalance === undefined || profile.walletBalance === null) {
-        profile.walletBalance = 0;
-    }
+    // Fetch wallet data from the separate wallet database
+    const walletData = await getWalletData(userId);
+    profile.walletBalance = walletData?.walletBalance || 0;
+
     if (!profile.topUpCodes) {
         profile.topUpCodes = {};
     }
@@ -176,38 +192,25 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 export const doesPhoneOrEmailExist = async (phone: string, email: string): Promise<{ phoneExists: boolean, emailExists: boolean }> => {
     if (!database) throw new Error("Firebase Database is not initialized.");
     const usersRef = ref(database, 'users');
-    const snapshot = await get(usersRef);
-    if (!snapshot.exists()) {
-        return { phoneExists: false, emailExists: false };
-    }
-    const users = snapshot.val();
-    let phoneExists = false;
-    let emailExists = false;
-    for (const userId in users) {
-        if (users[userId].phone === phone) {
-            phoneExists = true;
-        }
-        if (users[userId].email === email) {
-            emailExists = true;
-        }
-        if (phoneExists && emailExists) {
-            break; 
-        }
-    }
-    return { phoneExists, emailExists };
+    const phoneQuery = query(usersRef, orderByChild('phone'), equalTo(phone));
+    const emailQuery = query(usersRef, orderByChild('email'), equalTo(email));
+
+    const phoneSnapshot = await get(phoneQuery);
+    const emailSnapshot = await get(emailQuery);
+
+    return { phoneExists: phoneSnapshot.exists(), emailExists: emailSnapshot.exists() };
 };
+
 
 export const getUserByPhone = async (phone: string): Promise<UserProfile | null> => {
     if (!databaseInternal) return null;
     const usersRef = ref(databaseInternal, 'users');
-    const snapshot = await get(usersRef);
+    const q = query(usersRef, orderByChild('phone'), equalTo(phone));
+    const snapshot = await get(q);
     if (snapshot.exists()) {
         const users = snapshot.val();
-        for (const userId in users) {
-            if (users[userId].phone === phone) {
-                return users[userId] as UserProfile;
-            }
-        }
+        const userId = Object.keys(users)[0];
+        return users[userId] as UserProfile;
     }
     return null;
 };
@@ -216,7 +219,17 @@ export const getUserByPhone = async (phone: string): Promise<UserProfile | null>
 export const updateUserProfile = async (userId: string, updates: Partial<UserProfile>): Promise<void> => {
   if (!databaseInternal) return;
   const userRef = ref(databaseInternal, `users/${userId}`);
-  await update(userRef, {...updates, updatedAt: serverTimestamp()});
+  // Separate wallet updates from profile updates
+  const { walletBalance, ...profileUpdates } = updates;
+
+  if (Object.keys(profileUpdates).length > 0) {
+     await update(userRef, {...profileUpdates, updatedAt: serverTimestamp()});
+  }
+
+  if (walletBalance !== undefined && walletDatabaseInternal) {
+      const walletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
+      await update(walletRef, { walletBalance });
+  }
 };
 
 export const createDriverAccount = async (
@@ -227,7 +240,6 @@ export const createDriverAccount = async (
         throw new Error("Firebase Auth or Database is not initialized.");
     }
     
-    // Step 1: Check if phone or email already exist in the database
     const { phoneExists, emailExists } = await doesPhoneOrEmailExist(profileData.phone, profileData.email);
     if (phoneExists) {
         throw new Error("PHONE_EXISTS");
@@ -236,13 +248,11 @@ export const createDriverAccount = async (
         throw new Error("EMAIL_EXISTS");
     }
 
-    // Step 2: Create user in Firebase Auth
     let userId: string | null = null;
     try {
         const userCredential = await createUserWithEmailAndPassword(auth, profileData.email, password);
         userId = userCredential.user.uid;
 
-        // Step 3: Prepare and save user profile data to Realtime Database
         const finalProfileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt'> = {
             fullName: profileData.fullName,
             phone: profileData.phone,
@@ -268,12 +278,19 @@ export const createDriverAccount = async (
         
         await saveUserProfile(userId, finalProfileData);
         
-        // Step 4: Sign out the user after registration is complete
+        // Also create an entry in the wallet database
+        if (walletDatabaseInternal) {
+            const walletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
+            await set(walletRef, {
+                walletBalance: 0,
+                createdAt: serverTimestamp()
+            });
+        }
+        
         await firebaseSignOut(auth);
         
         return userId;
     } catch (error: any) {
-        // If user creation in auth succeeded but something else failed, delete the auth user to allow retry.
         if (userId) {
             const user = auth.currentUser;
             if (user && user.uid === userId) {
@@ -282,7 +299,6 @@ export const createDriverAccount = async (
                 });
             }
         }
-        // Re-throw specific Firebase auth errors or the custom errors
         if (error.code === 'auth/email-already-in-use') {
              throw new Error("EMAIL_EXISTS");
         }
@@ -311,10 +327,71 @@ export const addDriverToWaitingList = async (
 
 export const chargeWalletWithCode = async (
   userId: string,
-  chargeCodeInputOriginal: string
+  chargeCodeInput: string
 ): Promise<{ success: boolean; message: string; newBalance?: number }> => {
-  // This function is disabled as per the instructions
-  return { success: false, message: "This feature is temporarily disabled." };
+  if (!walletDatabaseInternal) {
+    return { success: false, message: "خدمة المحفظة غير متاحة حالياً." };
+  }
+
+  const chargeCode = chargeCodeInput.trim().toUpperCase();
+  const codeRef = ref(walletDatabaseInternal, `chargeCodes/${chargeCode}`);
+
+  return runTransaction(codeRef, (codeData) => {
+    if (codeData === null) {
+      // Code does not exist
+      return; // Abort transaction
+    }
+    if (codeData.status === 'used') {
+      // Code already used
+      return; // Abort transaction
+    }
+    
+    // Code is valid and unused, mark as used
+    codeData.status = 'used';
+    codeData.usedBy = userId;
+    codeData.usedAt = serverTimestamp();
+    
+    return codeData;
+  }).then(async (result) => {
+    if (!result.committed) {
+        // The transaction was aborted. Let's check why.
+        const snapshot = await get(codeRef);
+        if (!snapshot.exists()) {
+            return { success: false, message: "كود الشحن غير صحيح." };
+        }
+        if (snapshot.val().status === 'used') {
+            return { success: false, message: "كود الشحن هذا تم استخدامه مسبقاً." };
+        }
+        return { success: false, message: "فشل شحن الرصيد. الرجاء المحاولة مرة أخرى." };
+    }
+
+    // Transaction committed, now update the user's wallet
+    const amountToAdd = result.snapshot.val().amount;
+    const userWalletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
+    
+    let newBalance = 0;
+    await runTransaction(userWalletRef, (walletData) => {
+        if (walletData) {
+            walletData.walletBalance = (walletData.walletBalance || 0) + amountToAdd;
+            newBalance = walletData.walletBalance;
+        } else {
+            // If wallet doesn't exist, create it
+            walletData = { walletBalance: amountToAdd, createdAt: serverTimestamp() };
+            newBalance = amountToAdd;
+        }
+        return walletData;
+    });
+
+    return { 
+      success: true, 
+      message: `تم شحن رصيدك بمبلغ ${amountToAdd.toFixed(2)} د.أ بنجاح!`,
+      newBalance: newBalance
+    };
+
+  }).catch(error => {
+      console.error("Transaction failed: ", error);
+      return { success: false, message: "حدث خطأ غير متوقع أثناء شحن الرصيد." };
+  });
 };
 
 
