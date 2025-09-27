@@ -122,6 +122,7 @@ export const getCurrentUser = (): FirebaseAuthUser | null => {
 };
 
 export const onAuthUserChangedListener = (callback: (user: FirebaseAuthUser | null) => void) => {
+  // Return an empty unsubscribe function if auth is not initialized
   if (!authInternal) return () => {};
   return onAuthStateChanged(authInternal, callback);
 };
@@ -144,6 +145,7 @@ export const reauthenticateAndChangePassword = async (currentPassword: string, n
 
 // --- User Profile Service ---
 export const saveUserProfile = async (userId: string, profileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt' >): Promise<void> => {
+  if (!database) throw new Error("Firebase Database is not initialized.");
   const userRef = ref(databaseInternal, `users/${userId}`);
   const fullProfileData: UserProfile = {
     id: userId,
@@ -174,6 +176,30 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
   return null;
 };
 
+export const doesPhoneOrEmailExist = async (phone: string, email: string): Promise<{ phoneExists: boolean, emailExists: boolean }> => {
+    if (!database) throw new Error("Firebase Database is not initialized.");
+    const usersRef = ref(database, 'users');
+    const snapshot = await get(usersRef);
+    if (!snapshot.exists()) {
+        return { phoneExists: false, emailExists: false };
+    }
+    const users = snapshot.val();
+    let phoneExists = false;
+    let emailExists = false;
+    for (const userId in users) {
+        if (users[userId].phone === phone) {
+            phoneExists = true;
+        }
+        if (users[userId].email === email) {
+            emailExists = true;
+        }
+        if (phoneExists && emailExists) {
+            break; 
+        }
+    }
+    return { phoneExists, emailExists };
+};
+
 export const getUserByPhone = async (phone: string): Promise<UserProfile | null> => {
     if (!databaseInternal) return null;
     const usersRef = ref(databaseInternal, 'users');
@@ -200,16 +226,26 @@ export const createDriverAccount = async (
   profileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt' | 'status'>,
   password: string
 ): Promise<string> => {
-    if (!auth) {
-        throw new Error("Firebase Auth is not initialized.");
+    if (!auth || !database) {
+        throw new Error("Firebase Auth or Database is not initialized.");
     }
-    const authEmail = `t${profileData.phone}@tawsellah.com`;
+    
+    // Step 1: Check if phone or email already exist in the database
+    const { phoneExists, emailExists } = await doesPhoneOrEmailExist(profileData.phone, profileData.email);
+    if (phoneExists) {
+        throw new Error("PHONE_EXISTS");
+    }
+    if (emailExists) {
+        throw new Error("EMAIL_EXISTS");
+    }
 
+    // Step 2: Create user in Firebase Auth using the real email
     let userId: string | null = null;
     try {
-        const userCredential = await createUserWithEmailAndPassword(auth, authEmail, password);
+        const userCredential = await createUserWithEmailAndPassword(auth, profileData.email, password);
         userId = userCredential.user.uid;
 
+        // Step 3: Prepare and save user profile data to Realtime Database
         const finalProfileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt'> = {
             fullName: profileData.fullName,
             phone: profileData.phone,
@@ -234,22 +270,26 @@ export const createDriverAccount = async (
         };
         
         await saveUserProfile(userId, finalProfileData);
+        
+        // Step 4: Sign out the user after registration is complete
         await firebaseSignOut(auth);
         
         return userId;
-    } catch (error) {
-        // If user creation in auth succeeded but profile saving failed, delete the auth user
+    } catch (error: any) {
+        // If user creation in auth succeeded but something else failed, delete the auth user to allow retry.
         if (userId) {
             const user = auth.currentUser;
-            // Re-authenticate might be needed to delete, but for this flow, we try direct delete.
-            // A more robust flow might involve backend functions.
             if (user && user.uid === userId) {
                 await user.delete().catch(deleteError => {
                     console.error("Failed to delete orphaned auth user:", deleteError);
                 });
             }
         }
-        throw error; // Re-throw the original error to be handled by the UI
+        // Re-throw specific Firebase auth errors or the custom errors
+        if (error.code === 'auth/email-already-in-use') {
+             throw new Error("EMAIL_EXISTS");
+        }
+        throw error;
     }
 };
 
@@ -258,7 +298,7 @@ export const addDriverToWaitingList = async (
 ): Promise<void> => {
     if (!databaseInternal) return;
     const waitingListRef = ref(databaseInternal, 'drivers_waiting_list');
-    const newDriverRef = push(waitingListRef); // Use push for a unique ID
+    const newDriverRef = push(waitingListRef);
     
     const dataToSave: WaitingListDriverProfile = {
         ...profileData,
@@ -276,94 +316,8 @@ export const chargeWalletWithCode = async (
   userId: string,
   chargeCodeInputOriginal: string
 ): Promise<{ success: boolean; message: string; newBalance?: number }> => {
-  if (!databaseInternal) return { success: false, message: "Database not connected." };
-  if (!userId || !chargeCodeInputOriginal) {
-    return { success: false, message: "معرف المستخدم أو كود الشحن مفقود." };
-  }
-
-  const chargeCodeInput = chargeCodeInputOriginal.trim().toLowerCase();
-  if (!chargeCodeInput) {
-    return { success: false, message: "الرجاء إدخال كود الشحن." };
-  }
-
-  const userProfileRef = ref(databaseInternal, `users/${userId}`);
-
-  try {
-    const transactionResult = await runTransaction(userProfileRef, (currentProfileData: UserProfile | null) => {
-      if (currentProfileData === null) {
-        throw new Error("USER_PROFILE_NOT_FOUND");
-      }
-
-      if (!currentProfileData.topUpCodes || Object.keys(currentProfileData.topUpCodes).length === 0) {
-        throw new Error("NO_CODES_FOR_ACCOUNT");
-      }
-
-      let foundCodeDetails: { entryId: string, data: UserProfileTopUpCode } | null = null;
-      let codeEntryIdToUpdate: string | null = null;
-
-      for (const entryId in currentProfileData.topUpCodes) {
-        const codeDetail = currentProfileData.topUpCodes[entryId];
-        if (codeDetail.code && codeDetail.code.trim().toLowerCase() === chargeCodeInput) {
-          foundCodeDetails = { entryId, data: codeDetail };
-          codeEntryIdToUpdate = entryId;
-          break;
-        }
-      }
-
-      if (!foundCodeDetails || !codeEntryIdToUpdate) {
-        throw new Error("INVALID_CODE");
-      }
-
-      if (foundCodeDetails.data.status === 'used') {
-        throw new Error("USED_CODE");
-      }
-
-      // Code is valid and unused
-      const chargeAmount = foundCodeDetails.data.amount;
-      currentProfileData.walletBalance = (currentProfileData.walletBalance || 0) + chargeAmount;
-      
-      // Update the status of the specific code entry
-      currentProfileData.topUpCodes[codeEntryIdToUpdate].status = 'used';
-      currentProfileData.updatedAt = serverTimestamp(); // Update timestamp for the profile
-
-      return currentProfileData; // This is the data to be written
-    });
-
-    if (transactionResult.committed && transactionResult.snapshot.exists()) {
-      const updatedProfile = transactionResult.snapshot.val() as UserProfile;
-      
-      let chargedAmount = 0;
-      if(updatedProfile.topUpCodes){
-        const usedCodeEntry = Object.values(updatedProfile.topUpCodes).find(
-          (codeDetail) => codeDetail.code.trim().toLowerCase() === chargeCodeInput && codeDetail.status === 'used'
-        );
-        if(usedCodeEntry) {
-            chargedAmount = usedCodeEntry.amount;
-        }
-      }
-
-      return {
-        success: true,
-        message: `تم شحن الرصيد بنجاح بقيمة ${chargedAmount.toFixed(2)} د.أ. الرصيد الجديد: ${(updatedProfile.walletBalance || 0).toFixed(2)} د.أ.`,
-        newBalance: updatedProfile.walletBalance,
-      };
-    } else {
-      return { success: false, message: "فشلت عملية شحن الرصيد بسبب تنازع في البيانات أو خطأ غير متوقع. يرجى المحاولة مرة أخرى." };
-    }
-
-  } catch (error: any) {
-    if (error.message === "USER_PROFILE_NOT_FOUND") {
-      return { success: false, message: "لم يتم العثور على ملف المستخدم." };
-    } else if (error.message === "NO_CODES_FOR_ACCOUNT") {
-      return { success: false, message: "لا توجد أكواد شحن معرفة لهذا الحساب." };
-    } else if (error.message === "INVALID_CODE") {
-      return { success: false, message: "كود الشحن المدخل غير صالح." };
-    } else if (error.message === "USED_CODE") {
-      return { success: false, message: "تم استخدام هذا الكود مسبقًا." };
-    }
-    console.error("Error during chargeWalletWithCode transaction:", error);
-    return { success: false, message: "حدث خطأ أثناء عملية شحن الرصيد. يرجى المحاولة مرة أخرى." };
-  }
+  // This function is disabled as per the instructions
+  return { success: false, message: "This feature is temporarily disabled." };
 };
 
 
@@ -391,320 +345,63 @@ export const addTrip = async (driverId: string, tripData: NewTripData): Promise<
 };
 
 export const startTrip = async (tripId: string): Promise<void> => {
-  if (!databaseInternal) return;
-  const currentTripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
-  let currentSnapshot = await get(currentTripRef);
-  let tripToStart: Trip | null = currentSnapshot.exists() ? currentSnapshot.val() as Trip : null;
-  let originalPath = `${CURRENT_TRIPS_PATH}/${tripId}`;
-
-  if (tripToStart && tripToStart.status === 'upcoming') {
-    await update(currentTripRef, { status: 'ongoing', updatedAt: serverTimestamp() });
-    return;
-  }
-  
-  // If not in currentTrips or not upcoming, check finishedTrips
-  if (!tripToStart || tripToStart.status !== 'upcoming') {
-    const finishedTripsSnapshot = await get(ref(databaseInternal, FINISHED_TRIPS_PATH));
-    if (finishedTripsSnapshot.exists()) {
-      let driverIdForTrip: string | null = null;
-      let foundTripInFinished: Trip | null = null;
-
-      finishedTripsSnapshot.forEach(driverNode => {
-        if (driverNode.hasChild(tripId)) {
-          driverIdForTrip = driverNode.key;
-          foundTripInFinished = driverNode.child(tripId).val() as Trip;
-          return true; 
-        }
-      });
-
-      if (foundTripInFinished && driverIdForTrip && 
-          (foundTripInFinished.status === 'upcoming' || foundTripInFinished.status === 'completed' || foundTripInFinished.status === 'cancelled')) {
-        tripToStart = foundTripInFinished;
-        originalPath = `${FINISHED_TRIPS_PATH}/${driverIdForTrip}/${tripId}`;
-      } else if (foundTripInFinished) {
-        console.warn("Trip in finishedTrips cannot be started. Current status:", foundTripInFinished.status);
-        throw new Error("الرحلة في السجل ليست قادمة ولا يمكن بدؤها.");
-      }
-    }
-  }
-
-  if (tripToStart) {
-    const reactivatedTripData: Trip = {
-      ...tripToStart,
-      status: 'ongoing',
-      updatedAt: serverTimestamp(),
-    };
-    // Move to currentTrips (or update if it was already there but in a non-upcoming state)
-    await set(ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`), reactivatedTripData);
-    // If it was originally in finishedTrips, remove it from there
-    if (originalPath.startsWith(FINISHED_TRIPS_PATH)) {
-      await remove(ref(databaseInternal, originalPath));
-    }
-    return;
-  }
-  
-  console.error("Trip not found or cannot be started:", tripId);
-  throw new Error("لم يتم العثور على الرحلة أو لا يمكن بدؤها.");
+  // This function is disabled
+  console.warn("startTrip is disabled.");
 };
 
 export const updateTrip = async (tripId: string, updates: Partial<Trip>): Promise<void> => {
-  if (!databaseInternal) return;
-  const currentTripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
-  const currentSnapshot = await get(currentTripRef);
-
-  if (currentSnapshot.exists()) {
-    await update(currentTripRef, { ...updates, updatedAt: serverTimestamp() });
-  } else {
-    const finishedTripsSnapshot = await get(ref(databaseInternal, FINISHED_TRIPS_PATH));
-    if (finishedTripsSnapshot.exists()) {
-      let driverIdForTrip: string | null = null;
-      let tripPathInFinished: string | null = null;
-      finishedTripsSnapshot.forEach((driverNode) => {
-        if (driverNode.hasChild(tripId)) {
-          driverIdForTrip = driverNode.key;
-          tripPathInFinished = `${FINISHED_TRIPS_PATH}/${driverIdForTrip}/${tripId}`;
-          return true;
-        }
-      });
-      if (tripPathInFinished) {
-        await update(ref(databaseInternal, tripPathInFinished), { ...updates, updatedAt: serverTimestamp() });
-      } else {
-        console.warn(`Trip ${tripId} not found for update in currentTrips or finishedTrips.`);
-      }
-    } else {
-       console.warn(`Trip ${tripId} not found for update in currentTrips and finishedTrips node does not exist.`);
-    }
-  }
+  // This function is disabled
+  console.warn("updateTrip is disabled.");
 };
 
 export const deleteTrip = async (tripId: string): Promise<void> => {
-  if (!databaseInternal) return;
-  const tripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
-  const snapshot = await get(tripRef);
-  if (snapshot.exists()) {
-    const tripToEnd = snapshot.val() as Trip;
-     if (tripToEnd.status === 'upcoming' || tripToEnd.status === 'ongoing') {
-      const updates: Partial<Trip> = { status: 'cancelled', earnings: 0, updatedAt: serverTimestamp() };
-      
-      const finishedTripData: Trip = {
-        ...tripToEnd,
-        ...updates,
-      };
-      const finishedTripRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${tripToEnd.driverId}/${tripToEnd.id}`);
-      await set(finishedTripRef, finishedTripData);
-      await remove(tripRef); 
-    } else {
-      console.warn(`Trip ${tripId} in currentTrips is already completed or cancelled. Status: ${tripToEnd.status}`);
-       if (tripToEnd.status === 'completed' || tripToEnd.status === 'cancelled') {
-         await remove(tripRef);
-       }
-    }
-  } else {
-     console.warn(`Trip ${tripId} not found in currentTrips for deletion/cancellation.`);
-  }
+  // This function is disabled
+  console.warn("deleteTrip is disabled.");
 };
 
 export const getTripById = async (tripId: string): Promise<Trip | null> => {
-    if (!databaseInternal) return null;
-    const currentTripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
-    const currentSnapshot = await get(currentTripRef);
-    if (currentSnapshot.exists()) {
-        return currentSnapshot.val() as Trip;
-    }
-    
-    // Search in finishedTrips if not found in currentTrips
-    const finishedTripsSnapshot = await get(ref(databaseInternal, FINISHED_TRIPS_PATH));
-    if(finishedTripsSnapshot.exists()){
-        let foundTrip: Trip | null = null;
-        finishedTripsSnapshot.forEach((driverNode) => {
-            const driverTrips = driverNode.val();
-            if(driverTrips && driverTrips[tripId]){ // Check if driverTrips itself is not null
-                foundTrip = driverTrips[tripId] as Trip;
-                return true; 
-            }
-        });
-        if(foundTrip) return foundTrip;
-    }
-    return null;
+  // This function is disabled
+  console.warn("getTripById is disabled.");
+  return null;
 };
 
 export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Promise<Trip[]> => {
-  if (!databaseInternal) return [];
-  const allActiveTripsMap = new Map<string, Trip>();
-
-  // 1. Fetch from currentTrips
-  const currentTripsRef = ref(databaseInternal, CURRENT_TRIPS_PATH);
-  const currentSnapshot = await get(currentTripsRef);
-  if (currentSnapshot.exists()) {
-    currentSnapshot.forEach((childSnapshot) => {
-      const trip = childSnapshot.val() as Trip;
-      if (trip.driverId === driverId && (trip.status === 'upcoming' || trip.status === 'ongoing')) {
-        allActiveTripsMap.set(trip.id, trip);
-      }
-    });
-  }
-
-  // 2. Fetch from finishedTrips for the driver and check for "reactivated" trips
-  const finishedDriverTripsRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${driverId}`);
-  const finishedSnapshot = await get(finishedDriverTripsRef);
-  if (finishedSnapshot.exists()) {
-    finishedSnapshot.forEach((childSnapshot) => {
-      const trip = childSnapshot.val() as Trip;
-      if (trip.driverId === driverId && (trip.status === 'upcoming' || trip.status === 'ongoing')) {
-        // Add to map. If it was already added from currentTrips, the one from currentTrips takes precedence.
-        if (!allActiveTripsMap.has(trip.id)) {
-            allActiveTripsMap.set(trip.id, trip);
-        }
-      }
-    });
-  }
-
-  const trips = Array.from(allActiveTripsMap.values());
-  // Sort by dateTime in ascending order (earliest first)
-  return trips.sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
+  // This function is disabled
+  console.warn("getUpcomingAndOngoingTripsForDriver is disabled.");
+  return [];
 };
 
 
 export const getActiveTripForDriver = async (driverId: string): Promise<Trip | null> => {
-  const activeAndUpcomingTrips = await getUpcomingAndOngoingTripsForDriver(driverId);
-
-  if (activeAndUpcomingTrips.length === 0) {
-    return null;
-  }
-  // Prioritize ongoing trip
-  const ongoingTrip = activeAndUpcomingTrips.find(trip => trip.status === 'ongoing');
-  if (ongoingTrip) {
-    return ongoingTrip;
-  }
-  // If no ongoing, return the first upcoming trip (already sorted by dateTime)
-  const upcomingTrip = activeAndUpcomingTrips.find(trip => trip.status === 'upcoming');
-  return upcomingTrip || null; // Should always find one if list is not empty
+  // This function is disabled
+  console.warn("getActiveTripForDriver is disabled.");
+  return null;
 };
 
 
 export const getCompletedTripsForDriver = async (driverId: string): Promise<Trip[]> => {
-  if (!databaseInternal) return [];
-  const tripsRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${driverId}`);
-  const snapshot = await get(tripsRef); 
-  const trips: Trip[] = [];
-  if (snapshot.exists()) {
-    snapshot.forEach((childSnapshot) => {
-      const trip = childSnapshot.val() as Trip;
-      // Only include if status is actually completed or cancelled
-      if (trip.status === 'completed' || trip.status === 'cancelled') {
-        trips.push(trip);
-      }
-    });
-  }
-  // Sort by updatedAt in descending order (most recent first) on the client-side
-  return trips.sort((a, b) => {
-    const timeA = typeof a.updatedAt === 'object' ? (a.updatedAt as any)._seconds || 0 : (a.updatedAt || 0);
-    const timeB = typeof b.updatedAt === 'object' ? (b.updatedAt as any)._seconds || 0 : (b.updatedAt || 0);
-    return timeB - timeA;
-  });
+  // This function is disabled
+  console.warn("getCompletedTripsForDriver is disabled.");
+  return [];
 };
 
 
 export const endTrip = async (tripToEnd: Trip, earnings: number): Promise<void> => {
-  if (!databaseInternal) return;
-  if (!tripToEnd || !tripToEnd.driverId || !tripToEnd.id) {
-    console.error("Invalid trip data for ending trip:", tripToEnd);
-    throw new Error("Invalid trip data for ending trip.");
-  }
-  
-  const finishedTripData: Trip = {
-    ...tripToEnd,
-    status: 'completed',
-    earnings: earnings,
-    updatedAt: serverTimestamp(),
-  };
-  
-  const finishedTripRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${tripToEnd.driverId}/${tripToEnd.id}`);
-  const originalTripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripToEnd.id}`);
-
-  const userProfileRef = ref(databaseInternal, `users/${tripToEnd.driverId}`);
-  try {
-    await runTransaction(userProfileRef, (currentProfile: UserProfile | null) => {
-      if (currentProfile) {
-        currentProfile.tripsCount = (currentProfile.tripsCount || 0) + 1;
-        // Do NOT add to walletBalance here.
-        currentProfile.updatedAt = serverTimestamp();
-      }
-      return currentProfile;
-    });
-  } catch (error) {
-     console.error(`Transaction failed for updating user profile ${tripToEnd.driverId}: `, error);
-  }
-  
-  await set(finishedTripRef, finishedTripData);
-  await remove(originalTripRef);
+  // This function is disabled
+  console.warn("endTrip is disabled.");
 };
 
 export const getTrips = async (): Promise<Trip[]> => {
-  if (!databaseInternal) return [];
-  const tripsRef = ref(databaseInternal, CURRENT_TRIPS_PATH);
-  const snapshot = await get(tripsRef);
-  const trips: Trip[] = [];
-  if (snapshot.exists()) {
-    snapshot.forEach((childSnapshot) => {
-      trips.push(childSnapshot.val() as Trip);
-    });
-  }
-  return trips;
+  // This function is disabled
+  console.warn("getTrips is disabled.");
+  return [];
 };
 
 // --- Booking Cancellation Service ---
 export const cancelPassengerBooking = async (tripId: string, seatId: SeatID): Promise<{ success: boolean; message: string }> => {
-  if (!databaseInternal) return { success: false, message: "Database not connected." };
-  const tripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
-
-  try {
-    const transactionResult = await runTransaction(tripRef, (currentTripData: Trip | null) => {
-      if (currentTripData === null) {
-        throw new Error("TRIP_NOT_FOUND");
-      }
-      
-      const bookingDetails = currentTripData.offeredSeatsConfig?.[seatId] as PassengerBookingDetails | undefined;
-      if (!bookingDetails || typeof bookingDetails !== 'object') {
-        throw new Error("BOOKING_NOT_FOUND");
-      }
-
-      // Default fee is 0.20 if not found, for backward compatibility.
-      const feeToRefund = bookingDetails.fees ?? 0.20;
-
-      // Update driver's wallet in a separate transaction for atomicity
-      const driverProfileRef = ref(databaseInternal, `users/${currentTripData.driverId}`);
-      runTransaction(driverProfileRef, (currentProfile: UserProfile | null) => {
-          if (currentProfile) {
-            currentProfile.walletBalance = (currentProfile.walletBalance || 0) + feeToRefund;
-            currentProfile.updatedAt = serverTimestamp();
-          }
-          return currentProfile;
-      }).catch(err => console.error("Failed to refund driver's wallet:", err));
-
-      // Reset the seat to available
-      currentTripData.offeredSeatsConfig[seatId] = true;
-      currentTripData.updatedAt = serverTimestamp();
-
-      return currentTripData;
-    });
-
-    if (transactionResult.committed) {
-      return { success: true, message: "تم إلغاء حجز الراكب بنجاح وإعادة الرسوم." };
-    } else {
-      return { success: false, message: "فشل إلغاء الحجز بسبب تنازع في البيانات. يرجى المحاولة مرة أخرى." };
-    }
-
-  } catch (error: any) {
-    console.error("Error during cancelPassengerBooking transaction:", error);
-    if (error.message === 'TRIP_NOT_FOUND') {
-       return { success: false, message: "لم يتم العثور على الرحلة." };
-    }
-    if (error.message === 'BOOKING_NOT_FOUND') {
-       return { success: false, message: "لم يتم العثور على الحجز المحدد." };
-    }
-    return { success: false, message: "حدث خطأ أثناء إلغاء الحجز." };
-  }
+  // This function is disabled
+  console.warn("cancelPassengerBooking is disabled.");
+  return { success: false, message: "This feature is temporarily disabled." };
 };
 
 
@@ -714,50 +411,14 @@ export const generateRouteKey = (startPointId: string, destinationId: string): s
 };
 
 export const getStopStationsForRoute = async (startPointId: string, destinationId: string): Promise<string[] | null> => {
-  if (!databaseInternal) return null;
-  if (!startPointId || !destinationId) return null;
-  const routeKey = generateRouteKey(startPointId, destinationId);
-  const routeRef = ref(databaseInternal, `${STOP_STATIONS_PATH}/${routeKey}/stops`);
-  const snapshot = await get(routeRef);
-  if (snapshot.exists()) {
-    const stopsData = snapshot.val();
-    if (Array.isArray(stopsData)) {
-      return stopsData.filter(stop => typeof stop === 'string' && stop.trim() !== '');
-    } else if (typeof stopsData === 'object' && stopsData !== null) {
-      return Object.values(stopsData).filter(stop => typeof stop === 'string' && (stop as string).trim() !== '') as string[];
-    }
-  }
+  // This function is disabled
+  console.warn("getStopStationsForRoute is disabled.");
   return null;
 };
 
 export const addStopsToRoute = async (startPointId: string, destinationId: string, newStops: string[]): Promise<void> => {
-  if (!databaseInternal) return;
-  if (!startPointId || !destinationId) return;
-  const routeKey = generateRouteKey(startPointId, destinationId);
-  const routeStopsRef = ref(databaseInternal, `${STOP_STATIONS_PATH}/${routeKey}/stops`);
-  const routeLastUpdatedRef = ref(databaseInternal, `${STOP_STATIONS_PATH}/${routeKey}/lastUpdated`);
-
-  const validNewStops = newStops.filter(stop => typeof stop === 'string' && stop.trim() !== '');
-  if (validNewStops.length === 0) return; 
-
-  const snapshot = await get(routeStopsRef);
-  let existingStops: string[] = [];
-  if (snapshot.exists()) {
-    const stopsData = snapshot.val();
-     if (Array.isArray(stopsData)) {
-        existingStops = stopsData.filter(stop => typeof stop === 'string' && stop.trim() !== '');
-    } else if (typeof stopsData === 'object' && stopsData !== null) {
-        existingStops = Object.values(stopsData).filter(stop => typeof stop === 'string' && (stop as string).trim() !== '') as string[];
-    }
-  }
-
-  const combinedStopsSet = new Set(existingStops);
-  validNewStops.forEach(stop => combinedStopsSet.add(stop));
-  const uniqueStopsArray = Array.from(combinedStopsSet);
-
-  await set(routeStopsRef, uniqueStopsArray);
-  await set(routeLastUpdatedRef, serverTimestamp());
-  console.log(`Stops for route ${routeKey} updated:`, uniqueStopsArray);
+  // This function is disabled
+  console.warn("addStopsToRoute is disabled.");
 };
 
 // --- Support Service ---

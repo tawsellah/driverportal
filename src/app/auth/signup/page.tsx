@@ -108,7 +108,6 @@ export default function SignUpPage() {
     setIsLoading(true);
 
     try {
-        // Uploading functionality is disabled in the helper, will return placeholders
         const [idPhotoUrl, licensePhotoUrl, vehiclePhotoUrl] = await Promise.all([
             uploadFileToImageKitHelper(data.idPhoto?.[0]),
             uploadFileToImageKitHelper(data.licensePhoto?.[0]),
@@ -152,8 +151,10 @@ export default function SignUpPage() {
     } catch (error: any) {
         console.error("Signup Error:", error);
         let errorMessage = "حدث خطأ أثناء إنشاء الحساب. الرجاء المحاولة مرة أخرى.";
-        if (error.code === 'auth/email-already-in-use') {
+        if (error.message === 'PHONE_EXISTS') {
             errorMessage = "رقم الهاتف هذا مسجل بالفعل. يرجى استخدام رقم آخر أو تسجيل الدخول.";
+        } else if (error.message === 'EMAIL_EXISTS') {
+            errorMessage = "هذا البريد الإلكتروني مسجل بالفعل. يرجى استخدام بريد آخر أو تسجيل الدخول.";
         } else if (error.message) {
             errorMessage = error.message;
         }
