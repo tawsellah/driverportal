@@ -112,9 +112,8 @@ export default function SignUpPage() {
         if (phoneExists) {
             throw new Error("PHONE_EXISTS");
         }
-        if (emailExists) {
-            throw new Error("EMAIL_EXISTS");
-        }
+        // Firebase auth will throw 'auth/email-already-in-use' which we'll catch.
+        // The emailExists from our function is less reliable due to DB rules.
 
         const [idPhotoUrl, licensePhotoUrl, vehiclePhotoUrl] = await Promise.all([
             uploadFileToImageKitHelper(data.idPhoto?.[0]),
@@ -157,7 +156,7 @@ export default function SignUpPage() {
         let errorMessage = "حدث خطأ أثناء إنشاء الحساب. الرجاء المحاولة مرة أخرى.";
         if (error.message === 'PHONE_EXISTS') {
             errorMessage = "رقم الهاتف هذا مسجل بالفعل. يرجى استخدام رقم آخر أو تسجيل الدخول.";
-        } else if (error.message === 'EMAIL_EXISTS') {
+        } else if (error.message === 'EMAIL_EXISTS' || error.code === 'auth/email-already-in-use') {
             errorMessage = "هذا البريد الإلكتروني مسجل بالفعل. يرجى استخدام بريد آخر أو تسجيل الدخول.";
         }
         toast({
@@ -175,10 +174,9 @@ export default function SignUpPage() {
 
   return (
     <div className="form-card mb-10 w-full max-w-2xl">
-      <h2 className="mb-2 text-center text-2xl font-bold">إنشاء حساب سائق جديد</h2>
-      <div className="mb-4 text-center text-muted-foreground">
-        <p className="font-semibold text-lg">{`الخطوة ${currentStep + 1} من ${steps.length}`}</p>
-        <p>{steps[currentStep].title}</p>
+      <div className="mb-4 text-center">
+        <h2 className="text-2xl font-bold">إنشاء حساب سائق جديد</h2>
+        <p className="text-muted-foreground">{`الخطوة ${currentStep + 1} من ${steps.length}: ${steps[currentStep].title}`}</p>
       </div>
       
       <Progress value={progressValue} className="mb-6 h-2" />
@@ -325,5 +323,3 @@ export default function SignUpPage() {
     </div>
   );
 }
-
-    

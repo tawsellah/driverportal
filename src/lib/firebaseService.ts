@@ -192,13 +192,19 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 export const doesPhoneOrEmailExist = async (phone: string, email: string): Promise<{ phoneExists: boolean, emailExists: boolean }> => {
     if (!databaseInternal) throw new Error("Firebase Database is not initialized.");
     const usersRef = ref(databaseInternal, 'users');
-    const phoneQuery = query(usersRef, orderByChild('phone'), equalTo(phone));
-    const emailQuery = query(usersRef, orderByChild('email'), equalTo(email));
+    
+    // Since we cannot query without authentication, we'll try a different approach.
+    // We can't reliably check for existence without read permissions.
+    // The createDriverAccount function will now have to handle the specific 'auth/email-already-in-use' error.
+    // For phone, we'll check the public map.
+    const phoneMapRef = ref(databaseInternal, `phoneEmailMap/${phone}`);
+    const phoneSnapshot = await get(phoneMapRef);
 
-    const phoneSnapshot = await get(phoneQuery);
-    const emailSnapshot = await get(emailQuery);
-
-    return { phoneExists: phoneSnapshot.exists(), emailExists: emailSnapshot.exists() };
+    // We can't directly check for email existence in the 'users' table without read access.
+    // We will rely on Firebase Auth's error for email existence.
+    // For this to work, we must ensure signup rules don't block us.
+    // The check will be indirect.
+    return { phoneExists: phoneSnapshot.exists(), emailExists: false };
 };
 
 
@@ -248,12 +254,10 @@ export const createDriverAccount = async (
         throw new Error("Firebase Auth or Database is not initialized.");
     }
     
-    const { phoneExists, emailExists } = await doesPhoneOrEmailExist(profileData.phone, profileData.email);
+    // This check is now less reliable for email, but will still check phone.
+    const { phoneExists } = await doesPhoneOrEmailExist(profileData.phone, profileData.email);
     if (phoneExists) {
         throw new Error("PHONE_EXISTS");
-    }
-    if (emailExists) {
-        throw new Error("EMAIL_EXISTS");
     }
 
     let userId: string | null = null;
