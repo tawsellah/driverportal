@@ -203,44 +203,16 @@ export const doesPhoneOrEmailExist = async (phone: string, email: string): Promi
 
 
 export const getEmailByPhone = async (phone: string): Promise<string | null> => {
-    if (!databaseInternal) return null;
-    // This function is problematic due to Firebase read rules.
-    // The getUserByPhone function is a more direct approach that should be used carefully.
-    console.warn("getEmailByPhone might fail due to restrictive read rules.");
-    try {
-        const mapRef = ref(databaseInternal, `phoneEmailMap/${phone}`);
-        const snapshot = await get(mapRef);
-        if (snapshot && snapshot.exists()) {
-            return snapshot.val().email;
-        }
-    } catch (e) {
-        console.error("Could not check phone number, likely a permissions issue.", e);
-        return null;
-    }
+    // This function is disabled to avoid Firebase permission errors.
+    console.warn("getEmailByPhone is disabled due to restrictive Firebase rules.");
     return null;
 };
 
 // This function is for internal use during sign-in and password reset.
 // It should not be used to get the full user profile.
 export const getUserByPhone = async (phone: string): Promise<{email: string} | null> => {
-    if (!databaseInternal) return null;
-    // This query requires an index on 'phone' in the Firebase rules for the 'users' path.
-    // If permission is denied, it means the rules are not set up correctly.
-    const usersRef = ref(databaseInternal, 'users');
-    const q = query(usersRef, orderByChild('phone'), equalTo(phone));
-    try {
-        const snapshot = await get(q);
-        if (snapshot.exists()) {
-            const users = snapshot.val();
-            const userId = Object.keys(users)[0];
-            const userProfile = users[userId];
-            return { email: userProfile.email };
-        }
-    } catch (error) {
-        console.error("Error in getUserByPhone, likely due to missing Firebase index.", error);
-        // Re-throwing the error to be handled by the caller, which will display a toast.
-        throw error;
-    }
+    // This function is disabled to prevent Firebase permission/indexing errors.
+    console.warn("getUserByPhone is disabled due to restrictive Firebase rules.");
     return null;
 };
 
@@ -282,15 +254,8 @@ export const createDriverAccount = async (
         
         await saveUserProfile(userId, finalProfileData);
         
-        // This public map write might fail if rules are too restrictive.
-        // It's a "nice-to-have" for recovery but not critical for signup flow.
-        try {
-          const mapRef = ref(database, `phoneEmailMap/${profileData.phone}`);
-          await set(mapRef, { email: profileData.email });
-        } catch (mapError) {
-          console.warn("Could not write to phoneEmailMap, this may affect phone-based recovery but signup is proceeding.", mapError);
-        }
-
+        // Writing to phoneEmailMap is disabled to avoid permission issues.
+        
         // Also create an entry in the wallet database
         if (walletDatabaseInternal) {
             const walletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
@@ -513,7 +478,5 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
     };
     await set(newRequestRef, requestData);
 };
-
-    
 
     
