@@ -191,20 +191,14 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 
 export const doesPhoneOrEmailExist = async (phone: string, email: string): Promise<{ phoneExists: boolean, emailExists: boolean }> => {
     if (!databaseInternal) throw new Error("Firebase Database is not initialized.");
-    const usersRef = ref(databaseInternal, 'users');
     
-    // Since we cannot query without authentication, we'll try a different approach.
-    // We can't reliably check for existence without read permissions.
-    // The createDriverAccount function will now have to handle the specific 'auth/email-already-in-use' error.
-    // For phone, we'll check the public map.
-    const phoneMapRef = ref(databaseInternal, `phoneEmailMap/${phone}`);
-    const phoneSnapshot = await get(phoneMapRef);
+    // The check for email existence will be handled by Firebase Auth errors.
+    // The check for phone number existence is disabled due to permission issues for unauthenticated users.
+    // We can re-enable this if the DB rules for `phoneEmailMap` are set to public read.
+    // const phoneMapRef = ref(databaseInternal, `phoneEmailMap/${phone}`);
+    // const phoneSnapshot = await get(phoneMapRef);
 
-    // We can't directly check for email existence in the 'users' table without read access.
-    // We will rely on Firebase Auth's error for email existence.
-    // For this to work, we must ensure signup rules don't block us.
-    // The check will be indirect.
-    return { phoneExists: phoneSnapshot.exists(), emailExists: false };
+    return { phoneExists: false, emailExists: false };
 };
 
 
@@ -254,11 +248,11 @@ export const createDriverAccount = async (
         throw new Error("Firebase Auth or Database is not initialized.");
     }
     
-    // This check is now less reliable for email, but will still check phone.
-    const { phoneExists } = await doesPhoneOrEmailExist(profileData.phone, profileData.email);
-    if (phoneExists) {
-        throw new Error("PHONE_EXISTS");
-    }
+    // Phone existence check is disabled. Relying on Auth error for email.
+    // const { phoneExists } = await doesPhoneOrEmailExist(profileData.phone, profileData.email);
+    // if (phoneExists) {
+    //     throw new Error("PHONE_EXISTS");
+    // }
 
     let userId: string | null = null;
     try {

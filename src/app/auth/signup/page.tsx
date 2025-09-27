@@ -108,12 +108,15 @@ export default function SignUpPage() {
     setIsLoading(true);
 
     try {
-        const { phoneExists, emailExists } = await doesPhoneOrEmailExist(data.phone, data.email);
-        if (phoneExists) {
-            throw new Error("PHONE_EXISTS");
-        }
-        // Firebase auth will throw 'auth/email-already-in-use' which we'll catch.
-        // The emailExists from our function is less reliable due to DB rules.
+        // The pre-check is disabled due to permission issues. 
+        // We now rely on the error handling inside createDriverAccount.
+        // const { phoneExists, emailExists } = await doesPhoneOrEmailExist(data.phone, data.email);
+        // if (phoneExists) {
+        //     throw new Error("PHONE_EXISTS");
+        // }
+        // if (emailExists) {
+        //     throw new Error("EMAIL_EXISTS");
+        // }
 
         const [idPhotoUrl, licensePhotoUrl, vehiclePhotoUrl] = await Promise.all([
             uploadFileToImageKitHelper(data.idPhoto?.[0]),
