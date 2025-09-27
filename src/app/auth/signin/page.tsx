@@ -171,7 +171,8 @@ export default function SignInPage() {
               icon={Phone}
               placeholder="أدخل رقم هاتفك"
               {...register('phone')}
-              className={`text-right ${errors.phone ? 'border-destructive' : ''}`}
+              className={`text-left ${errors.phone ? 'border-destructive' : ''}`}
+              dir="ltr"
               aria-invalid={errors.phone ? "true" : "false"}
             />
             {errors.phone && <p className="mt-1 text-sm text-destructive">{errors.phone.message}</p>}
