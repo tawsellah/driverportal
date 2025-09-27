@@ -52,8 +52,6 @@ export interface UserProfile {
   vehicleColor?: string;
   vehiclePlateNumber?: string;
   vehiclePhotosUrl?: string | null;
-  rating?: number;
-  tripsCount?: number;
   paymentMethods?: {
     click?: boolean;
     cash?: boolean;
@@ -122,7 +120,6 @@ export const getCurrentUser = (): FirebaseAuthUser | null => {
 };
 
 export const onAuthUserChangedListener = (callback: (user: FirebaseAuthUser | null) => void) => {
-  // Return an empty unsubscribe function if auth is not initialized
   if (!authInternal) return () => {};
   return onAuthStateChanged(authInternal, callback);
 };
@@ -145,7 +142,7 @@ export const reauthenticateAndChangePassword = async (currentPassword: string, n
 
 // --- User Profile Service ---
 export const saveUserProfile = async (userId: string, profileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt' >): Promise<void> => {
-  if (!database) throw new Error("Firebase Database is not initialized.");
+  if (!databaseInternal) throw new Error("Firebase Database is not initialized.");
   const userRef = ref(databaseInternal, `users/${userId}`);
   const fullProfileData: UserProfile = {
     id: userId,
@@ -239,7 +236,7 @@ export const createDriverAccount = async (
         throw new Error("EMAIL_EXISTS");
     }
 
-    // Step 2: Create user in Firebase Auth using the real email
+    // Step 2: Create user in Firebase Auth
     let userId: string | null = null;
     try {
         const userCredential = await createUserWithEmailAndPassword(auth, profileData.email, password);
@@ -329,19 +326,10 @@ const SUPPORT_REQUESTS_PATH = 'supportRequests';
 
 
 export const addTrip = async (driverId: string, tripData: NewTripData): Promise<Trip> => {
-  if (!databaseInternal) throw new Error("Database not connected.");
-  const tripId = `trip_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-  const newTrip: Trip = {
-    ...tripData, 
-    id: tripId,
-    driverId,
-    status: 'upcoming',
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  };
-  const tripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
-  await set(tripRef, newTrip);
-  return newTrip;
+  // This function is disabled
+  console.warn("addTrip is disabled.");
+  // @ts-ignore
+  return Promise.resolve({});
 };
 
 export const startTrip = async (tripId: string): Promise<void> => {
