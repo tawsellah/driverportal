@@ -140,7 +140,7 @@ export default function SignInPage() {
         await sendPasswordResetEmail(auth, userWithPhone.email);
         toast({
             title: "تم إرسال رابط استعادة كلمة المرور",
-            description: `تم إرسال رابط إلى بريدك الإلكتروني المسجل ${userWithPhone.email}. يرجى التحقق منه.`,
+            description: `تم إرسال رابط إلى بريدك الإلكتروني المسجل. يرجى التحقق منه.`,
         });
     } catch(error: any) {
         console.error("Forgot Password Error:", error);

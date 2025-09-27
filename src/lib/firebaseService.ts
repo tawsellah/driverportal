@@ -190,8 +190,8 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 };
 
 export const doesPhoneOrEmailExist = async (phone: string, email: string): Promise<{ phoneExists: boolean, emailExists: boolean }> => {
-    if (!database) throw new Error("Firebase Database is not initialized.");
-    const usersRef = ref(database, 'users');
+    if (!databaseInternal) throw new Error("Firebase Database is not initialized.");
+    const usersRef = ref(databaseInternal, 'users');
     const phoneQuery = query(usersRef, orderByChild('phone'), equalTo(phone));
     const emailQuery = query(usersRef, orderByChild('email'), equalTo(email));
 
@@ -202,15 +202,23 @@ export const doesPhoneOrEmailExist = async (phone: string, email: string): Promi
 };
 
 
-export const getUserByPhone = async (phone: string): Promise<UserProfile | null> => {
+export const getEmailByPhone = async (phone: string): Promise<string | null> => {
     if (!databaseInternal) return null;
-    const usersRef = ref(databaseInternal, 'users');
-    const q = query(usersRef, orderByChild('phone'), equalTo(phone));
-    const snapshot = await get(q);
+    // Use the public phoneEmailMap instead of the protected 'users' path
+    const mapRef = ref(databaseInternal, `phoneEmailMap/${phone}`);
+    const snapshot = await get(mapRef);
     if (snapshot.exists()) {
-        const users = snapshot.val();
-        const userId = Object.keys(users)[0];
-        return users[userId] as UserProfile;
+        return snapshot.val().email;
+    }
+    return null;
+};
+
+// This function is for internal use during sign-in and password reset.
+// It should not be used to get the full user profile.
+export const getUserByPhone = async (phone: string): Promise<{email: string} | null> => {
+    const email = await getEmailByPhone(phone);
+    if (email) {
+        return { email };
     }
     return null;
 };
@@ -278,6 +286,10 @@ export const createDriverAccount = async (
         
         await saveUserProfile(userId, finalProfileData);
         
+        // Save the phone-to-email mapping in the public map
+        const mapRef = ref(database, `phoneEmailMap/${profileData.phone}`);
+        await set(mapRef, { email: profileData.email });
+
         // Also create an entry in the wallet database
         if (walletDatabaseInternal) {
             const walletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
