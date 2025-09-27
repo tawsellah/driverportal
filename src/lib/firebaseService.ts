@@ -192,16 +192,14 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 export const doesPhoneOrEmailExist = async (phone: string, email: string): Promise<{ phoneExists: boolean, emailExists: boolean }> => {
     if (!databaseInternal) throw new Error("Firebase Database is not initialized.");
     
-    // For phone, we'll check the public map.
-    const phoneMapRef = ref(databaseInternal, `phoneEmailMap/${phone}`);
-    const phoneSnapshot = await get(phoneMapRef).catch(e => {
-        console.warn("Could not check phone number, might be a permissions issue. Relying on auth error.", e);
-        return null;
-    });
+    // Check if phone number exists in 'users'
+    const phoneQuery = query(ref(databaseInternal, 'users'), orderByChild('phone'), equalTo(phone));
+    const phoneSnapshot = await get(phoneQuery);
+    const phoneExists = phoneSnapshot.exists();
 
     // We can't directly check for email existence in the 'users' table without read access.
     // We will rely on Firebase Auth's error for email existence.
-    return { phoneExists: phoneSnapshot?.exists() ?? false, emailExists: false };
+    return { phoneExists, emailExists: false };
 };
 
 
@@ -209,8 +207,11 @@ export const getEmailByPhone = async (phone: string): Promise<string | null> => 
     if (!databaseInternal) return null;
     // Use the public phoneEmailMap instead of the protected 'users' path
     const mapRef = ref(databaseInternal, `phoneEmailMap/${phone}`);
-    const snapshot = await get(mapRef);
-    if (snapshot.exists()) {
+    const snapshot = await get(mapRef).catch(e => {
+        console.warn("Could not check phone number, might be a permissions issue. Relying on auth error.", e);
+        return null;
+    });
+    if (snapshot && snapshot.exists()) {
         return snapshot.val().email;
     }
     return null;
@@ -307,8 +308,8 @@ export const createDriverAccount = async (
 export const addDriverToWaitingList = async (
   profileData: Omit<WaitingListDriverProfile, 'status' | 'createdAt'>
 ): Promise<void> => {
-    // This function is disabled
-    console.warn("addDriverToWaitingList is disabled.");
+  // This function is disabled
+  console.warn("addDriverToWaitingList is disabled.");
 };
 
 
@@ -487,3 +488,5 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
     };
     await set(newRequestRef, requestData);
 };
+
+    
