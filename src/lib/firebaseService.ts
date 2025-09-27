@@ -192,13 +192,16 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 export const doesPhoneOrEmailExist = async (phone: string, email: string): Promise<{ phoneExists: boolean, emailExists: boolean }> => {
     if (!databaseInternal) throw new Error("Firebase Database is not initialized.");
     
-    // The check for email existence will be handled by Firebase Auth errors.
-    // The check for phone number existence is disabled due to permission issues for unauthenticated users.
-    // We can re-enable this if the DB rules for `phoneEmailMap` are set to public read.
-    // const phoneMapRef = ref(databaseInternal, `phoneEmailMap/${phone}`);
-    // const phoneSnapshot = await get(phoneMapRef);
+    // For phone, we'll check the public map.
+    const phoneMapRef = ref(databaseInternal, `phoneEmailMap/${phone}`);
+    const phoneSnapshot = await get(phoneMapRef).catch(e => {
+        console.warn("Could not check phone number, might be a permissions issue. Relying on auth error.", e);
+        return null;
+    });
 
-    return { phoneExists: false, emailExists: false };
+    // We can't directly check for email existence in the 'users' table without read access.
+    // We will rely on Firebase Auth's error for email existence.
+    return { phoneExists: phoneSnapshot?.exists() ?? false, emailExists: false };
 };
 
 
@@ -216,9 +219,15 @@ export const getEmailByPhone = async (phone: string): Promise<string | null> => 
 // This function is for internal use during sign-in and password reset.
 // It should not be used to get the full user profile.
 export const getUserByPhone = async (phone: string): Promise<{email: string} | null> => {
-    const email = await getEmailByPhone(phone);
-    if (email) {
-        return { email };
+    if (!databaseInternal) return null;
+    const usersRef = ref(databaseInternal, 'users');
+    const q = query(usersRef, orderByChild('phone'), equalTo(phone));
+    const snapshot = await get(q);
+    if (snapshot.exists()) {
+        const users = snapshot.val();
+        const userId = Object.keys(users)[0];
+        const userProfile = users[userId];
+        return { email: userProfile.email };
     }
     return null;
 };
@@ -247,12 +256,6 @@ export const createDriverAccount = async (
     if (!auth || !database) {
         throw new Error("Firebase Auth or Database is not initialized.");
     }
-    
-    // Phone existence check is disabled. Relying on Auth error for email.
-    // const { phoneExists } = await doesPhoneOrEmailExist(profileData.phone, profileData.email);
-    // if (phoneExists) {
-    //     throw new Error("PHONE_EXISTS");
-    // }
 
     let userId: string | null = null;
     try {
@@ -260,25 +263,7 @@ export const createDriverAccount = async (
         userId = userCredential.user.uid;
 
         const finalProfileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt'> = {
-            fullName: profileData.fullName,
-            phone: profileData.phone,
-            email: profileData.email,
-            secondaryPhone: profileData.secondaryPhone || '',
-            idNumber: profileData.idNumber,
-            idPhotoUrl: profileData.idPhotoUrl,
-            licenseNumber: profileData.licenseNumber,
-            licenseExpiry: profileData.licenseExpiry,
-            licensePhotoUrl: profileData.licensePhotoUrl,
-            vehicleType: profileData.vehicleType,
-            otherVehicleType: profileData.otherVehicleType || '',
-            vehicleYear: profileData.vehicleYear,
-            vehicleColor: profileData.vehicleColor,
-            vehiclePlateNumber: profileData.vehiclePlateNumber,
-            vehiclePhotosUrl: profileData.vehiclePhotosUrl,
-            paymentMethods: { cash: true, click: false, clickCode: '' },
-            rating: 5,
-            tripsCount: 0,
-            walletBalance: 0,
+            ...profileData,
             status: 'pending' as const,
         };
         
@@ -301,8 +286,11 @@ export const createDriverAccount = async (
         
         return userId;
     } catch (error: any) {
+        // If user creation succeeded but subsequent database operations failed, delete the auth user
         if (userId) {
             const user = auth.currentUser;
+            // Re-authenticate and delete if necessary, but for simplicity we'll try to delete directly.
+            // This might fail if the token expired. A more robust solution involves re-authentication.
             if (user && user.uid === userId) {
                 await user.delete().catch(deleteError => {
                     console.error("Failed to delete orphaned auth user:", deleteError);
@@ -319,17 +307,8 @@ export const createDriverAccount = async (
 export const addDriverToWaitingList = async (
   profileData: Omit<WaitingListDriverProfile, 'status' | 'createdAt'>
 ): Promise<void> => {
-    if (!databaseInternal) return;
-    const waitingListRef = ref(databaseInternal, 'drivers_waiting_list');
-    const newDriverRef = push(waitingListRef);
-    
-    const dataToSave: WaitingListDriverProfile = {
-        ...profileData,
-        status: 'pending',
-        createdAt: serverTimestamp()
-    };
-    
-    await set(newDriverRef, dataToSave);
+    // This function is disabled
+    console.warn("addDriverToWaitingList is disabled.");
 };
 
 

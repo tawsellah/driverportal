@@ -108,15 +108,13 @@ export default function SignUpPage() {
     setIsLoading(true);
 
     try {
-        // The pre-check is disabled due to permission issues. 
-        // We now rely on the error handling inside createDriverAccount.
-        // const { phoneExists, emailExists } = await doesPhoneOrEmailExist(data.phone, data.email);
-        // if (phoneExists) {
-        //     throw new Error("PHONE_EXISTS");
-        // }
-        // if (emailExists) {
-        //     throw new Error("EMAIL_EXISTS");
-        // }
+        const { phoneExists, emailExists } = await doesPhoneOrEmailExist(data.phone, data.email);
+        
+        if (phoneExists) {
+            toast({ title: "خطأ في التسجيل", description: "رقم الهاتف هذا مسجل بالفعل. يرجى استخدام رقم آخر أو تسجيل الدخول.", variant: "destructive" });
+            setIsLoading(false);
+            return;
+        }
 
         const [idPhotoUrl, licensePhotoUrl, vehiclePhotoUrl] = await Promise.all([
             uploadFileToImageKitHelper(data.idPhoto?.[0]),
@@ -157,9 +155,7 @@ export default function SignUpPage() {
     } catch (error: any) {
         console.error("Signup Error:", error);
         let errorMessage = "حدث خطأ أثناء إنشاء الحساب. الرجاء المحاولة مرة أخرى.";
-        if (error.message === 'PHONE_EXISTS') {
-            errorMessage = "رقم الهاتف هذا مسجل بالفعل. يرجى استخدام رقم آخر أو تسجيل الدخول.";
-        } else if (error.message === 'EMAIL_EXISTS' || error.code === 'auth/email-already-in-use') {
+        if (error.message === 'EMAIL_EXISTS' || error.code === 'auth/email-already-in-use') {
             errorMessage = "هذا البريد الإلكتروني مسجل بالفعل. يرجى استخدام بريد آخر أو تسجيل الدخول.";
         }
         toast({
