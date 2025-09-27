@@ -2,17 +2,20 @@
 import { NextResponse } from 'next/server';
 import ImageKit from 'imagekit';
 
-// WARNING: Never expose your privateKey in client-side code or commit it to version control.
-// Use environment variables for sensitive data in production.
-// For this example, keys are hardcoded but this is NOT recommended for production.
+// WARNING: Keys are cleared to disconnect from the service.
+// This is NOT recommended for production without a proper config management system.
 const imagekit = new ImageKit({
-  publicKey: process.env.NEXT_PUBLIC_IMAGEKIT_PUBLIC_KEY || "public_IfRvA+ieL0CZzBuuO9i9cFceLn8=",
-  privateKey: process.env.IMAGEKIT_PRIVATE_KEY || "private_M639+xksOgWoN42TwbWpr10mkvc=",
-  urlEndpoint: process.env.NEXT_PUBLIC_IMAGEKIT_URL_ENDPOINT || "https://ik.imagekit.io/Tawsellah/"
+  publicKey: "",
+  privateKey: "",
+  urlEndpoint: ""
 });
 
 export async function GET() {
   try {
+    // Check if keys are provided before attempting to get parameters
+    if (!imagekit.options.publicKey || !imagekit.options.privateKey || !imagekit.options.urlEndpoint) {
+      return NextResponse.json({ error: "ImageKit service is not configured." }, { status: 503 });
+    }
     const authenticationParameters = imagekit.getAuthenticationParameters();
     return NextResponse.json(authenticationParameters);
   } catch (error) {

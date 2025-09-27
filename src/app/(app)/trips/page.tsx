@@ -268,6 +268,11 @@ export default function TripsPage() {
     if (isInitialLoad) {
       setIsLoading(true);
     }
+    // Data fetching is disabled.
+    setTrips([]);
+    setCanCreateTrip(true); // Allow creating trips locally
+    setIsLoading(false);
+    /*
     const currentUser = auth.currentUser;
     if (currentUser) {
       let anUpcomingTripWasAutoStarted = false;
@@ -321,6 +326,7 @@ export default function TripsPage() {
         setIsLoading(false);
       }
     }
+    */
   }, [toast]); 
 
   useEffect(() => {
@@ -337,7 +343,9 @@ export default function TripsPage() {
     return () => unsubscribe();
   }, [router, fetchTripsData]);
 
+  // Periodic updates are disabled.
   useEffect(() => {
+    /*
     const intervalId = setInterval(() => {
       if (auth.currentUser) { 
         fetchTripsData(false); 
@@ -347,6 +355,7 @@ export default function TripsPage() {
     return () => {
       clearInterval(intervalId); 
     };
+    */
   }, [fetchTripsData]); 
 
 
@@ -355,7 +364,9 @@ export default function TripsPage() {
         setIsLoadingPassengerDetails(true);
     }
     setPassengerDetailsList([]); 
+    setIsLoadingPassengerDetails(false);
 
+    /*
     try {
       const freshlyFetchedTrip = await getTripById(tripId);
       const resolvedPassengers: DisplayPassengerDetails[] = [];
@@ -387,6 +398,7 @@ export default function TripsPage() {
         setIsLoadingPassengerDetails(false);
       }
     }
+    */
   }, [toast]);
 
 
@@ -396,7 +408,9 @@ export default function TripsPage() {
     await fetchAndSetPassengerDetails(trip.id, true); 
   }, [fetchAndSetPassengerDetails]);
 
+  // Periodic passenger detail updates are disabled.
   useEffect(() => {
+    /*
     let intervalId: NodeJS.Timeout | null = null;
     if (isPassengerDialogOpen && currentTripForPassengers) {
       intervalId = setInterval(() => {
@@ -408,10 +422,14 @@ export default function TripsPage() {
         clearInterval(intervalId);
       }
     };
+    */
   }, [isPassengerDialogOpen, currentTripForPassengers, fetchAndSetPassengerDetails]);
 
 
   const handleDeleteTrip = async (tripId: string) => {
+    // Functionality disabled.
+    toast({title: "تم تعطيل هذه الميزة مؤقتًا.", variant: "destructive"});
+    /*
     try {
       await fbDeleteTrip(tripId); 
       toast({ title: "تم إلغاء الرحلة بنجاح" });
@@ -420,9 +438,13 @@ export default function TripsPage() {
       console.error("Error cancelling trip:", error);
       toast({title: "خطأ في إلغاء الرحلة", variant: "destructive"});
     }
+    */
   };
 
   const handleStartTrip = async (tripId: string) => {
+    // Functionality disabled.
+    toast({title: "تم تعطيل هذه الميزة مؤقتًا.", variant: "destructive"});
+    /*
     try {
       await fbStartTrip(tripId);
       toast({ title: "تم بدء الرحلة بنجاح!"});
@@ -431,9 +453,13 @@ export default function TripsPage() {
       console.error("Error starting trip:", error);
       toast({ title: "خطأ في بدء الرحلة", description: error.message || "يرجى المحاولة مرة أخرى.", variant: "destructive" });
     }
+    */
   };
 
   const handleEndTrip = async (tripToEnd: Trip) => {
+    // Functionality disabled.
+    toast({title: "تم تعطيل هذه الميزة مؤقتًا.", variant: "destructive"});
+    /*
      try {
       let bookedSeatsCount = 0;
       if (tripToEnd.offeredSeatsConfig) {
@@ -451,6 +477,7 @@ export default function TripsPage() {
       console.error("Error ending trip:", error);
       toast({title: "خطأ في إنهاء الرحلة", variant: "destructive"});
     }
+    */
   };
 
   if (isLoading) {

@@ -27,6 +27,21 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const profileUnsubscribeRef = useRef<() => void>(() => {});
 
   useEffect(() => {
+    // Data fetching and real-time updates are disabled.
+    // This will prevent the app from making requests to Firebase.
+    const authUnsubscribe = onAuthUserChangedListener((user) => {
+        if (user) {
+            // Set a mock/empty profile or keep it loading to prevent UI errors
+            // setUserProfile(null); 
+        } else {
+            setUserProfile(null);
+        }
+        setIsLoadingProfile(false); // Stop loading indicator
+    });
+    
+    return () => authUnsubscribe();
+
+    /*
     // This listener handles auth state changes (login/logout)
     const authUnsubscribe = onAuthUserChangedListener((user) => {
       // Detach any existing profile listener before setting up a new one
@@ -97,6 +112,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
             profileUnsubscribeRef.current();
         }
     };
+    */
   }, [router, toast]);
 
   return (

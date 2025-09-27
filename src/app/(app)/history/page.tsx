@@ -117,6 +117,11 @@ export default function HistoryPage() {
 
   const fetchInitialData = useCallback(async (userId: string, initialLoad: boolean = true) => {
     if (initialLoad) setIsLoading(true);
+    // Data fetching is disabled.
+    setAllTrips([]);
+    setUserProfile(null);
+    setIsLoading(false);
+    /*
     try {
       const [trips, profile] = await Promise.all([
         getCompletedTripsForDriver(userId),
@@ -130,6 +135,7 @@ export default function HistoryPage() {
     } finally {
       if (initialLoad) setIsLoading(false);
     }
+    */
   }, [toast]);
 
   useEffect(() => {
@@ -146,8 +152,9 @@ export default function HistoryPage() {
     return () => unsubscribe();
   }, [router, fetchInitialData]);
 
-  // Periodic fetching for completed trips
+  // Periodic fetching for completed trips is disabled.
   useEffect(() => {
+    /*
     let intervalId: NodeJS.Timeout | null = null;
     const refreshCompletedTrips = async () => {
       if (currentUserId) {
@@ -168,10 +175,12 @@ export default function HistoryPage() {
         clearInterval(intervalId);
       }
     };
+    */
   }, [currentUserId]);
 
-  // Periodic fetching for wallet balance
+  // Periodic fetching for wallet balance is disabled.
   useEffect(() => {
+    /*
     let intervalId: NodeJS.Timeout | null = null;
     const pollWalletBalance = async () => {
       if (currentUserId) {
@@ -194,6 +203,7 @@ export default function HistoryPage() {
         clearInterval(intervalId);
       }
     };
+    */
   }, [currentUserId]);
 
   const handleChargeWallet = async () => {
@@ -207,7 +217,11 @@ export default function HistoryPage() {
     }
 
     setIsChargingWallet(true);
+    // Functionality is disabled.
+    const result = { success: false, message: "تم تعطيل هذه الميزة مؤقتًا." };
+    /*
     const result = await chargeWalletWithCode(currentUserId, chargeCodeInput.trim());
+    */
     setIsChargingWallet(false);
 
     toast({
@@ -222,8 +236,9 @@ export default function HistoryPage() {
           setUserProfile(prev => prev ? ({ ...prev, walletBalance: result.newBalance! }) : null);
         } else { 
           try {
-            const freshProfile = await getUserProfile(currentUserId);
-            setUserProfile(freshProfile);
+            // Data fetching is disabled.
+            // const freshProfile = await getUserProfile(currentUserId);
+            // setUserProfile(freshProfile);
           } catch (e) {
             console.error("Failed to refetch profile after successful charge when local was null", e);
             toast({title:"خطأ", description: "تم شحن الرصيد ولكن حدث خطأ في تحديث عرض الرصيد. حاول تحديث الصفحة.", variant: "destructive"});
