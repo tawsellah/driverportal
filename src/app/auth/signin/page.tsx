@@ -186,7 +186,8 @@ export default function SignInPage() {
               icon={Lock}
               placeholder="أدخل كلمة المرور"
               {...register('password')}
-              className={`text-right ${errors.password ? 'border-destructive' : ''}`}
+              className={`text-left ${errors.password ? 'border-destructive' : ''}`}
+              dir="ltr"
               aria-invalid={errors.password ? "true" : "false"}
             />
             {errors.password && <p className="mt-1 text-sm text-destructive">{errors.password.message}</p>}
