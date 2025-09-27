@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Mail, Lock, LogIn, ArrowLeft, Loader2 } from 'lucide-react';
+import { Mail, Lock, LogIn, ArrowLeft, Loader2, Phone } from 'lucide-react';
 import { IconInput } from '@/components/shared/icon-input';
 import { auth } from '@/lib/firebase';
 import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
@@ -206,5 +206,3 @@ export default function SignInPage() {
     </div>
   );
 }
-
-    

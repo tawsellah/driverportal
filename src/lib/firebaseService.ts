@@ -291,15 +291,38 @@ export const createDriverAccount = async (
 export const addDriverToWaitingList = async (
   profileData: Omit<WaitingListDriverProfile, 'status' | 'createdAt'>
 ): Promise<void> => {
-  if (!database) return;
-    const waitingListRef = ref(database, 'drivers_waiting_list');
-    const newDriverRef = push(waitingListRef);
-    const fullProfile: WaitingListDriverProfile = {
-        ...profileData,
+    if (!database) return;
+
+    const newDriverRef = push(ref(database, 'users'));
+    const userId = newDriverRef.key;
+
+    if (!userId) throw new Error("Could not generate a new user ID.");
+
+    // This is essentially creating a user profile directly
+    const fullProfile: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt'> = {
+        fullName: profileData.fullName,
+        phone: profileData.phone,
+        email: 'placeholder@email.com', // Placeholder email, main registration should handle this
+        secondaryPhone: profileData.secondaryPhone || '',
+        idNumber: profileData.idNumber,
+        idPhotoUrl: profileData.idPhotoUrl,
+        licenseNumber: profileData.licenseNumber,
+        licenseExpiry: profileData.licenseExpiry,
+        licensePhotoUrl: profileData.licensePhotoUrl,
+        vehicleType: profileData.vehicleType,
+        otherVehicleType: null,
+        vehicleYear: profileData.vehicleYear,
+        vehicleColor: profileData.vehicleColor,
+        vehiclePlateNumber: profileData.vehiclePlateNumber,
+        vehiclePhotosUrl: profileData.vehiclePhotosUrl,
+        paymentMethods: { cash: true, click: false, clickCode: '' },
+        rating: 5,
+        tripsCount: 0,
+        walletBalance: 0,
         status: 'pending',
-        createdAt: serverTimestamp(),
     };
-    await set(newDriverRef, fullProfile);
+
+    await saveUserProfile(userId, fullProfile);
 };
 
 
@@ -478,5 +501,3 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
     };
     await set(newRequestRef, requestData);
 };
-
-    
