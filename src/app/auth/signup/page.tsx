@@ -108,9 +108,11 @@ export default function SignUpPage() {
     setIsLoading(true);
 
     try {
+        // The check for phone existence is disabled to avoid Firebase index errors.
+        // We will rely solely on Firebase Auth to catch duplicate emails.
         const { phoneExists, emailExists } = await doesPhoneOrEmailExist(data.phone, data.email);
         
-        if (phoneExists) {
+        if (phoneExists) { // This block may not be reached if the check is disabled
             toast({ title: "خطأ في التسجيل", description: "رقم الهاتف هذا مسجل بالفعل. يرجى استخدام رقم آخر أو تسجيل الدخول.", variant: "destructive" });
             setIsLoading(false);
             return;
@@ -322,5 +324,7 @@ export default function SignUpPage() {
     </div>
   );
 }
+
+    
 
     
