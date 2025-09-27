@@ -50,7 +50,7 @@ export interface UserProfile {
   licenseExpiry?: string;
   licensePhotoUrl?: string | null; 
   vehicleType?: string;
-  otherVehicleType?: string;
+  otherVehicleType?: string | null;
   vehicleYear?: string;
   vehicleColor?: string;
   vehiclePlateNumber?: string;
@@ -276,6 +276,7 @@ export const createDriverAccount = async (
 
         const finalProfileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt'> = {
             ...profileData,
+            otherVehicleType: profileData.otherVehicleType || null, // Ensure null instead of undefined
             status: 'pending' as const,
         };
         
@@ -325,8 +326,15 @@ export const createDriverAccount = async (
 export const addDriverToWaitingList = async (
   profileData: Omit<WaitingListDriverProfile, 'status' | 'createdAt'>
 ): Promise<void> => {
-  // This function is disabled
-  console.warn("addDriverToWaitingList is disabled.");
+  if (!database) return;
+    const waitingListRef = ref(database, 'drivers_waiting_list');
+    const newDriverRef = push(waitingListRef);
+    const fullProfile: WaitingListDriverProfile = {
+        ...profileData,
+        status: 'pending',
+        createdAt: serverTimestamp(),
+    };
+    await set(newDriverRef, fullProfile);
 };
 
 
