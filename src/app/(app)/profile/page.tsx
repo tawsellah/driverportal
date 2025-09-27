@@ -38,10 +38,6 @@ const profileSchema = z.object({
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
 async function uploadFileToImageKit(file: File): Promise<string | null> {
-  // Functionality is disabled.
-  console.log("ImageKit upload is disabled.");
-  return "https://placehold.co/400x400.png?text=UploadDisabled";
-  /*
   try {
     const authResponse = await fetch('/api/imagekit-auth');
     if (!authResponse.ok) {
@@ -74,7 +70,6 @@ async function uploadFileToImageKit(file: File): Promise<string | null> {
     console.error('Error uploading to ImageKit:', error);
     return null;
   }
-  */
 }
 
 
@@ -103,15 +98,6 @@ export default function ProfilePage() {
   useEffect(() => {
     const fetchProfile = async () => {
       setIsFetchingProfile(true);
-      // Data fetching is disabled.
-      setUserProfile(null); // Or set a mock profile for UI testing
-      setIsFetchingProfile(false);
-      const currentUser = auth.currentUser;
-      if (!currentUser) {
-          router.push('/auth/signin');
-      }
-
-      /*
       const currentUser = auth.currentUser;
       if (currentUser) {
         try {
@@ -132,7 +118,6 @@ export default function ProfilePage() {
         router.push('/auth/signin');
       }
       setIsFetchingProfile(false);
-      */
     };
     fetchProfile();
   }, [reset, toast, router]);
@@ -149,11 +134,6 @@ export default function ProfilePage() {
     if (!userProfile || !auth.currentUser) return;
     setIsLoading(true);
     
-    // Functionality is disabled.
-    toast({ title: "تم تعطيل هذه الميزة مؤقتًا.", variant: "destructive" });
-    setIsLoading(false);
-    
-    /*
     let actualUploadedPhotoUrl: string | null = userProfile.idPhotoUrl || null;
     if (newPhotoFile) {
       const uploadedUrl = await uploadFileToImageKit(newPhotoFile);
@@ -193,7 +173,6 @@ export default function ProfilePage() {
     } finally {
       setIsLoading(false);
     }
-    */
   };
 
   const handleSignOut = async () => {
@@ -385,8 +364,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-    
-
-    
-
-

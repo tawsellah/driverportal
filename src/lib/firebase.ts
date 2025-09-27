@@ -1,18 +1,19 @@
+
 // Import the functions you need from the SDKs you need
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getAnalytics, type Analytics, isSupported } from "firebase/analytics";
 import { getAuth, type Auth, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { getDatabase, type Database } from "firebase/database";
 
-// Your web app's Firebase configuration is cleared to disconnect the app.
+// Your web app's Firebase configuration is now connected.
 const firebaseConfig = {
-  apiKey: "",
-  authDomain: "",
-  databaseURL: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: "",
+  apiKey: "AIzaSyAUpmdKntEMOsTm6J2wdSiNTcQqvszVjnE",
+  authDomain: "driverprofile-82715.firebaseapp.com",
+  databaseURL: "https://driverprofile-82715-default-rtdb.firebaseio.com",
+  projectId: "driverprofile-82715",
+  storageBucket: "driverprofile-82715.appspot.com",
+  messagingSenderId: "458114014927",
+  appId: "1:458114014927:web:9db764a35e2bad4c26a1ba", // Constructed a web app ID
   measurementId: ""
 };
 

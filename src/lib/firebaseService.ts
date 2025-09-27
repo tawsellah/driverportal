@@ -157,6 +157,7 @@ export const saveUserProfile = async (userId: string, profileData: Omit<UserProf
 };
 
 export const getUserProfile = async (userId: string): Promise<UserProfile | null> => {
+  if (!databaseInternal) return null;
   const userRef = ref(databaseInternal, `users/${userId}`);
   const snapshot = await get(userRef);
   if (snapshot.exists()) {
@@ -174,6 +175,7 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 };
 
 export const getUserByPhone = async (phone: string): Promise<UserProfile | null> => {
+    if (!databaseInternal) return null;
     const usersRef = ref(databaseInternal, 'users');
     const snapshot = await get(usersRef);
     if (snapshot.exists()) {
@@ -189,6 +191,7 @@ export const getUserByPhone = async (phone: string): Promise<UserProfile | null>
 
 
 export const updateUserProfile = async (userId: string, updates: Partial<UserProfile>): Promise<void> => {
+  if (!databaseInternal) return;
   const userRef = ref(databaseInternal, `users/${userId}`);
   await update(userRef, {...updates, updatedAt: serverTimestamp()});
 };
@@ -235,19 +238,25 @@ export const createDriverAccount = async (
         
         return userId;
     } catch (error) {
+        // If user creation in auth succeeded but profile saving failed, delete the auth user
         if (userId) {
             const user = auth.currentUser;
+            // Re-authenticate might be needed to delete, but for this flow, we try direct delete.
+            // A more robust flow might involve backend functions.
             if (user && user.uid === userId) {
-                await user.delete();
+                await user.delete().catch(deleteError => {
+                    console.error("Failed to delete orphaned auth user:", deleteError);
+                });
             }
         }
-        throw error;
+        throw error; // Re-throw the original error to be handled by the UI
     }
 };
 
 export const addDriverToWaitingList = async (
   profileData: Omit<WaitingListDriverProfile, 'status' | 'createdAt'>
 ): Promise<void> => {
+    if (!databaseInternal) return;
     const waitingListRef = ref(databaseInternal, 'drivers_waiting_list');
     const newDriverRef = push(waitingListRef); // Use push for a unique ID
     
@@ -267,6 +276,7 @@ export const chargeWalletWithCode = async (
   userId: string,
   chargeCodeInputOriginal: string
 ): Promise<{ success: boolean; message: string; newBalance?: number }> => {
+  if (!databaseInternal) return { success: false, message: "Database not connected." };
   if (!userId || !chargeCodeInputOriginal) {
     return { success: false, message: "معرف المستخدم أو كود الشحن مفقود." };
   }
@@ -365,6 +375,7 @@ const SUPPORT_REQUESTS_PATH = 'supportRequests';
 
 
 export const addTrip = async (driverId: string, tripData: NewTripData): Promise<Trip> => {
+  if (!databaseInternal) throw new Error("Database not connected.");
   const tripId = `trip_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   const newTrip: Trip = {
     ...tripData, 
@@ -380,6 +391,7 @@ export const addTrip = async (driverId: string, tripData: NewTripData): Promise<
 };
 
 export const startTrip = async (tripId: string): Promise<void> => {
+  if (!databaseInternal) return;
   const currentTripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
   let currentSnapshot = await get(currentTripRef);
   let tripToStart: Trip | null = currentSnapshot.exists() ? currentSnapshot.val() as Trip : null;
@@ -436,6 +448,7 @@ export const startTrip = async (tripId: string): Promise<void> => {
 };
 
 export const updateTrip = async (tripId: string, updates: Partial<Trip>): Promise<void> => {
+  if (!databaseInternal) return;
   const currentTripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
   const currentSnapshot = await get(currentTripRef);
 
@@ -465,6 +478,7 @@ export const updateTrip = async (tripId: string, updates: Partial<Trip>): Promis
 };
 
 export const deleteTrip = async (tripId: string): Promise<void> => {
+  if (!databaseInternal) return;
   const tripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
   const snapshot = await get(tripRef);
   if (snapshot.exists()) {
@@ -491,6 +505,7 @@ export const deleteTrip = async (tripId: string): Promise<void> => {
 };
 
 export const getTripById = async (tripId: string): Promise<Trip | null> => {
+    if (!databaseInternal) return null;
     const currentTripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
     const currentSnapshot = await get(currentTripRef);
     if (currentSnapshot.exists()) {
@@ -514,6 +529,7 @@ export const getTripById = async (tripId: string): Promise<Trip | null> => {
 };
 
 export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Promise<Trip[]> => {
+  if (!databaseInternal) return [];
   const allActiveTripsMap = new Map<string, Trip>();
 
   // 1. Fetch from currentTrips
@@ -567,6 +583,7 @@ export const getActiveTripForDriver = async (driverId: string): Promise<Trip | n
 
 
 export const getCompletedTripsForDriver = async (driverId: string): Promise<Trip[]> => {
+  if (!databaseInternal) return [];
   const tripsRef = ref(databaseInternal, `${FINISHED_TRIPS_PATH}/${driverId}`);
   const snapshot = await get(tripsRef); 
   const trips: Trip[] = [];
@@ -589,6 +606,7 @@ export const getCompletedTripsForDriver = async (driverId: string): Promise<Trip
 
 
 export const endTrip = async (tripToEnd: Trip, earnings: number): Promise<void> => {
+  if (!databaseInternal) return;
   if (!tripToEnd || !tripToEnd.driverId || !tripToEnd.id) {
     console.error("Invalid trip data for ending trip:", tripToEnd);
     throw new Error("Invalid trip data for ending trip.");
@@ -623,6 +641,7 @@ export const endTrip = async (tripToEnd: Trip, earnings: number): Promise<void> 
 };
 
 export const getTrips = async (): Promise<Trip[]> => {
+  if (!databaseInternal) return [];
   const tripsRef = ref(databaseInternal, CURRENT_TRIPS_PATH);
   const snapshot = await get(tripsRef);
   const trips: Trip[] = [];
@@ -636,6 +655,7 @@ export const getTrips = async (): Promise<Trip[]> => {
 
 // --- Booking Cancellation Service ---
 export const cancelPassengerBooking = async (tripId: string, seatId: SeatID): Promise<{ success: boolean; message: string }> => {
+  if (!databaseInternal) return { success: false, message: "Database not connected." };
   const tripRef = ref(databaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
 
   try {
@@ -694,6 +714,7 @@ export const generateRouteKey = (startPointId: string, destinationId: string): s
 };
 
 export const getStopStationsForRoute = async (startPointId: string, destinationId: string): Promise<string[] | null> => {
+  if (!databaseInternal) return null;
   if (!startPointId || !destinationId) return null;
   const routeKey = generateRouteKey(startPointId, destinationId);
   const routeRef = ref(databaseInternal, `${STOP_STATIONS_PATH}/${routeKey}/stops`);
@@ -710,6 +731,7 @@ export const getStopStationsForRoute = async (startPointId: string, destinationI
 };
 
 export const addStopsToRoute = async (startPointId: string, destinationId: string, newStops: string[]): Promise<void> => {
+  if (!databaseInternal) return;
   if (!startPointId || !destinationId) return;
   const routeKey = generateRouteKey(startPointId, destinationId);
   const routeStopsRef = ref(databaseInternal, `${STOP_STATIONS_PATH}/${routeKey}/stops`);
@@ -740,6 +762,7 @@ export const addStopsToRoute = async (startPointId: string, destinationId: strin
 
 // --- Support Service ---
 export const submitSupportRequest = async (data: Omit<SupportRequestData, 'status' | 'createdAt'>): Promise<void> => {
+    if (!databaseInternal) return;
     const supportRequestsRef = ref(databaseInternal, SUPPORT_REQUESTS_PATH);
     const newRequestRef = push(supportRequestsRef);
     const requestData: SupportRequestData = {

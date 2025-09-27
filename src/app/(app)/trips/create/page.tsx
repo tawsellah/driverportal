@@ -452,8 +452,3 @@ export default function CreateTripPage() {
     </Card>
   );
 }
-    
-
-    
-
-    

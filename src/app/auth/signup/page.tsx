@@ -26,9 +26,9 @@ const signUpSchema = z.object({
   email: z.string().email({ message: "الرجاء إدخال بريد إلكتروني صالح." }),
   password: z.string().min(6, { message: "كلمة المرور يجب أن تكون 6 أحرف على الأقل." }),
   
-  idNumber: z.string().regex(/^[A-Z0-9]{8}$/, { message: "رقم الهوية يجب أن يتكون من 8 أحرف إنجليزية كبيرة وأرقام." }),
+  idNumber: z.string().regex(/^\d{10}$/, { message: "الرقم الوطني يجب أن يتكون من 10 أرقام." }),
   idPhoto: z.any().refine(files => files?.length > 0, { message: "الصورة الشخصية مطلوبة." }),
-  licenseNumber: z.string().regex(/^[0-9]{8}$/, { message: "رقم الرخصة يجب أن يتكون من 8 أرقام." }),
+  licenseNumber: z.string().regex(/^\d{8}$/, { message: "رقم الرخضة يجب ان يتكون من 8 ارقام" }),
   licenseExpiry: z.string().min(1, { message: "تاريخ انتهاء الرخصة مطلوب." }),
   licensePhoto: z.any().refine(files => files?.length > 0, { message: "صورة الرخصة مطلوبة." }),
 
@@ -57,36 +57,10 @@ const steps: { title: string; fields: FieldName<SignUpFormValues>[] }[] = [
 ];
 
 async function uploadFileToImageKitHelper(file: File | undefined | null): Promise<string | null> {
+  // Functionality is disabled. Returning a placeholder.
   if (!file) return null;
-  try {
-    const authResponse = await fetch('/api/imagekit-auth');
-    if (!authResponse.ok) throw new Error('Failed to get ImageKit auth params');
-    const authParams = await authResponse.json();
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('fileName', file.name);
-    formData.append('publicKey', process.env.NEXT_PUBLIC_IMAGEKIT_PUBLIC_KEY || "public_IfRvA+ieL0CZzBuuO9i9cFceLn8=");
-    formData.append('signature', authParams.signature);
-    formData.append('expire', authParams.expire);
-    formData.append('token', authParams.token);
-
-    const uploadResponse = await fetch('https://upload.imagekit.io/api/v1/files/upload', {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!uploadResponse.ok) {
-      const errorData = await uploadResponse.json();
-      console.error('ImageKit Upload Error:', errorData);
-      throw new Error(errorData.message || 'ImageKit upload failed for a file');
-    }
-    const uploadResult = await uploadResponse.json();
-    return uploadResult.url;
-  } catch (error) {
-    console.error('Error uploading a file to ImageKit:', error);
-    return null;
-  }
+  console.log("ImageKit upload is disabled. Returning placeholder for", file.name);
+  return `https://placehold.co/400x400.png?text=${file.name.substring(0,10)}`;
 }
 
 const FileInput = ({
@@ -134,6 +108,7 @@ export default function SignUpPage() {
     setIsLoading(true);
 
     try {
+        // Uploading functionality is disabled in the helper, will return placeholders
         const [idPhotoUrl, licensePhotoUrl, vehiclePhotoUrl] = await Promise.all([
             uploadFileToImageKitHelper(data.idPhoto?.[0]),
             uploadFileToImageKitHelper(data.licensePhoto?.[0]),
@@ -240,8 +215,8 @@ export default function SignUpPage() {
         {currentStep === 1 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                 <div className="space-y-1">
-                  <Label htmlFor="idNumber">رقم الهوية <span className="text-destructive">*</span></Label>
-                  <IconInput icon={CreditCard} id="idNumber" {...register('idNumber')} error={errors.idNumber?.message} maxLength={8} />
+                  <Label htmlFor="idNumber">الرقم الوطني <span className="text-destructive">*</span></Label>
+                  <IconInput icon={CreditCard} id="idNumber" {...register('idNumber')} error={errors.idNumber?.message} maxLength={10} />
                   {errors.idNumber && <p className="mt-1 text-sm text-destructive">{errors.idNumber.message}</p>}
                 </div>
                  <div className="space-y-1">
@@ -347,5 +322,3 @@ export default function SignUpPage() {
     </div>
   );
 }
-
-    
