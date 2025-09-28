@@ -404,7 +404,6 @@ export const chargeWalletWithCode = async (
     });
 
     if (!codeId || !codeData) {
-      // This case should not be reached if snapshot.exists() is true, but it's good for type safety.
       return { success: false, message: "خطأ في قراءة بيانات الكود." };
     }
 
@@ -417,22 +416,22 @@ export const chargeWalletWithCode = async (
       return { success: false, message: "كود الشحن يحتوي على قيمة غير صالحة." };
     }
 
-    // Prepare references for the transaction
+    // Prepare references for update
     const codeToUpdateRef = ref(codesDatabaseInternal, `topUpCodes/${codeId}`);
     const userWalletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
 
-    // Create a multi-path update object
-    const updates: { [key: string]: any } = {};
-    updates[`${codeToUpdateRef.parent?.key}/${codeId}/status`] = 'used';
-    updates[`${codeToUpdateRef.parent?.key}/${codeId}/driverId`] = userId;
-    updates[`${codeToUpdateRef.parent?.key}/${codeId}/usedAt`] = serverTimestamp();
+    // Update code status
+    await update(codeToUpdateRef, {
+        status: 'used',
+        driverId: userId,
+        usedAt: serverTimestamp()
+    });
 
-    // Run transaction on the user's wallet to ensure atomicity
+    // Run transaction on wallet to ensure atomicity
     const walletTransactionResult = await runTransaction(userWalletRef, (walletData) => {
         if (walletData) {
             walletData.walletBalance = (walletData.walletBalance || 0) + amountToAdd;
         } else {
-            // If wallet doesn't exist, create it
             walletData = { walletBalance: amountToAdd, createdAt: serverTimestamp() };
         }
         walletData.updatedAt = serverTimestamp();
@@ -441,11 +440,8 @@ export const chargeWalletWithCode = async (
 
     if (walletTransactionResult.committed && walletTransactionResult.snapshot.exists()) {
         const newBalance = walletTransactionResult.snapshot.val().walletBalance;
-
-        // If wallet update is successful, apply the update to the code status in the other database
-        await update(ref(codesDatabaseInternal), updates);
         
-        // Log the transaction in the wallet database
+        // Log the transaction
         await addWalletTransaction(userId, {
             type: 'charge',
             amount: amountToAdd,
@@ -459,14 +455,13 @@ export const chargeWalletWithCode = async (
             newBalance
         };
     } else {
-        throw new Error("فشلت عملية تحديث رصيد المحفظة. لم يتم استخدام الكود.");
+        // If wallet update fails, try to revert the code status change
+        await update(codeToUpdateRef, { status: 'unused', driverId: '', usedAt: null });
+        throw new Error("فشلت عملية تحديث رصيد المحفظة. تم التراجع عن استخدام الكود.");
     }
 
   } catch (error: any) {
     console.error("Charge wallet failed: ", error);
-    if (error.code === 'PERMISSION_DENIED') {
-        return { success: false, message: "خطأ في صلاحيات الوصول. الرجاء التحقق من قواعد الأمان وقاعدة الفهرسة." };
-    }
     return { success: false, message: `حدث خطأ غير متوقع: ${error.message}` };
   }
 };
