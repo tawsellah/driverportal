@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { auth as authInternal , database as databaseInternal } from './firebase'; 
@@ -18,6 +19,7 @@ import {
 import { ref, set, get, child, update, remove, query, orderByChild, equalTo, serverTimestamp, runTransaction, push } from 'firebase/database';
 import type { SeatID } from './constants';
 import { SEAT_CONFIG } from './constants'; 
+import { useToast } from '@/hooks/use-toast';
 
 export const auth = authInternal;
 export const database = databaseInternal;
@@ -373,50 +375,59 @@ export const chargeWalletWithCode = async (
   const codeRef = ref(walletDatabaseInternal, `chargeCodes/${chargeCode}`);
 
   return runTransaction(codeRef, (codeData) => {
-    if (codeData === null) { // Code does not exist
-      return; // Abort transaction
+    if (codeData === null) {
+      // Return a specific value to indicate the code does not exist.
+      return "DOES_NOT_EXIST";
     }
-    if (codeData.status === 'used') { // Code has been used
-      return; // Abort transaction
+    if (codeData.status === 'used') {
+      // Return a specific value to indicate the code has been used.
+      return "ALREADY_USED";
     }
     
-    // If we are here, code is valid and unused. Mark it as used.
+    // If the code is valid and unused, update its status.
     codeData.status = 'used';
     codeData.usedBy = userId;
     codeData.usedAt = serverTimestamp();
     
+    // Return the modified data to commit the transaction.
     return codeData;
   }).then(async (result) => {
+    const finalCodeData = result.snapshot.val();
+
+    // Check if the transaction was aborted because the code was invalid.
+    if (finalCodeData === "DOES_NOT_EXIST") {
+      return { success: false, message: "كود الشحن غير صحيح." };
+    }
+    if (finalCodeData === "ALREADY_USED") {
+      return { success: false, message: "كود الشحن تم استخدامه مسبقاً." };
+    }
     if (!result.committed) {
-        // The transaction was aborted. This means the code did not exist or was already used.
-        return { success: false, message: "كود الشحن غير صحيح أو تم استخدامه مسبقاً." };
+        return { success: false, message: "فشل التحقق من كود الشحن. يرجى المحاولة مرة أخرى." };
     }
 
-    const amountToAdd = result.snapshot.val().amount;
+    // If the transaction was successful, proceed to update the wallet balance.
+    const amountToAdd = finalCodeData.amount;
     const userWalletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
     
     let newBalance = 0;
     await runTransaction(userWalletRef, (walletData) => {
         if (walletData) {
-            // Wallet exists, update balance
             walletData.walletBalance = (walletData.walletBalance || 0) + amountToAdd;
             newBalance = walletData.walletBalance;
         } else {
-            // Wallet doesn't exist, create it with the new balance
             walletData = { walletBalance: amountToAdd, createdAt: serverTimestamp() };
             newBalance = amountToAdd;
         }
         return walletData;
     });
 
-    // Log the successful transaction
+    // Log the successful transaction.
     await addWalletTransaction(userId, {
         type: 'charge',
         amount: amountToAdd,
         date: serverTimestamp(),
         description: `شحن رصيد باستخدام كود: ${chargeCode}`
     });
-
 
     return { 
       success: true, 
@@ -723,3 +734,4 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
 };
 
     
+
