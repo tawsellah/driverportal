@@ -450,7 +450,7 @@ export default function EditTripPage() {
             </div>
             <div>
               <Label htmlFor="pricePerPassenger">السعر للراكب (د.أ)</Label>
-              <Input id="pricePerPassenger" type="number" {...register('pricePerPassenger')} placeholder="مثال: 5" />
+              <Input id="pricePerPassenger" type="number" step="0.1" {...register('pricePerPassenger')} placeholder="مثال: 5" />
               {errors.pricePerPassenger && <p className="mt-1 text-sm text-destructive">{errors.pricePerPassenger.message}</p>}
             </div>
           </div>
@@ -469,8 +469,5 @@ export default function EditTripPage() {
     </Card>
   );
 }
-    
-
-    
 
     
