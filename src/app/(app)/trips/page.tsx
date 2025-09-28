@@ -29,7 +29,6 @@ import {
     endTrip as fbEndTrip, 
     startTrip as fbStartTrip,
     type Trip, 
-    getActiveTripForDriver, 
     onAuthUserChangedListener,
     type PassengerBookingDetails,
     getTripById 
@@ -255,7 +254,6 @@ function TripCard({
 export default function TripsPage() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [isLoading, setIsLoading] = useState(true); 
-  const [canCreateTrip, setCanCreateTrip] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
 
@@ -308,21 +306,12 @@ export default function TripsPage() {
             });
         } finally {
             setTrips(tripsToUpdateLocally);
-            try {
-                const activeTrip = await getActiveTripForDriver(currentUser.uid);
-                setCanCreateTrip(!activeTrip);
-            } catch (error) {
-                console.error("Error checking for active trip:", error);
-                setCanCreateTrip(false); // Assume cannot create if check fails
-            }
-
             if (isInitialLoad) {
                 setIsLoading(false);
             }
         }
     } else {
         setTrips([]);
-        setCanCreateTrip(false);
         if (isInitialLoad) {
             setIsLoading(false);
         }
@@ -335,7 +324,6 @@ export default function TripsPage() {
         fetchTripsData(true); 
       } else {
         setTrips([]);
-        setCanCreateTrip(false);
         setIsLoading(false); 
         router.push('/auth/signin');
       }
@@ -469,6 +457,8 @@ export default function TripsPage() {
   const destinationNameDialog = currentTripForPassengers?.destination 
     ? (JORDAN_GOVERNORATES.find(g => g.id === currentTripForPassengers.destination)?.name || currentTripForPassengers.destination)
     : '';
+
+  const canCreateTrip = trips.length === 0;
 
   return (
     <div>
