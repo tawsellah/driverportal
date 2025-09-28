@@ -187,19 +187,31 @@ export default function HistoryPage() {
   const fetchInitialData = useCallback(async (userId: string, initialLoad: boolean = true) => {
     if (initialLoad) setIsLoading(true);
     try {
-      const [trips, profile] = await Promise.all([
-         getCompletedTripsForDriver(userId),
-         getUserProfile(userId)
-      ]);
-      setAllTrips(trips);
-      setUserProfile(profile);
+        // Fetch profile first
+        const profile = await getUserProfile(userId);
+        setUserProfile(profile);
+
+        // Then, fetch trips, handling potential errors gracefully
+        try {
+            const trips = await getCompletedTripsForDriver(userId);
+            setAllTrips(trips);
+        } catch (tripError) {
+            console.warn("Could not fetch completed trips, registry might be empty:", tripError);
+            setAllTrips([]); // Set to empty array on error
+            toast({
+                title: "ملاحظة",
+                description: "لم يتم العثور على سجل رحلات مكتملة.",
+                variant: "default"
+            });
+        }
     } catch (error) {
-      console.error("Error fetching history or profile:", error);
-      if (initialLoad) toast({ title: "خطأ في تحميل البيانات", variant: "destructive" });
+        console.error("Error fetching initial page data:", error);
+        if (initialLoad) toast({ title: "خطأ في تحميل البيانات", description: "فشل تحميل بيانات الملف الشخصي.", variant: "destructive" });
     } finally {
-      if (initialLoad) setIsLoading(false);
+        if (initialLoad) setIsLoading(false);
     }
   }, [toast]);
+
 
   useEffect(() => {
     const unsubscribe = onAuthUserChangedListener(user => {
@@ -374,3 +386,5 @@ export default function HistoryPage() {
     </div>
   );
 }
+
+    
