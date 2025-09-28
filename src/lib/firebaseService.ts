@@ -399,78 +399,77 @@ export const chargeWalletWithCode = async (
     let codeId: string | null = null;
     let codeData: TopUpCode | null = null;
     snapshot.forEach(childSnapshot => {
-      // Since 'code' should be unique, we expect only one result.
       codeId = childSnapshot.key;
-      codeData = { id: childSnapshot.key!, ...childSnapshot.val() };
+      codeData = childSnapshot.val();
     });
 
     if (!codeId || !codeData) {
-      return { success: false, message: "حدث خطأ أثناء التحقق من الكود." };
+      // This case should not be reached if snapshot.exists() is true, but it's good for type safety.
+      return { success: false, message: "خطأ في قراءة بيانات الكود." };
     }
-    
+
     if (codeData.status !== 'unused') {
-      return { success: false, message: "كود الشحن تم استخدامه مسبقاً." };
+      return { success: false, message: "هذا الكود تم استخدامه مسبقاً." };
     }
-    
+
     const amountToAdd = codeData.amount;
     if (!amountToAdd || typeof amountToAdd !== 'number' || amountToAdd <= 0) {
       return { success: false, message: "كود الشحن يحتوي على قيمة غير صالحة." };
     }
 
-    // If code is valid, run a transaction on the user's wallet.
+    // Prepare references for the transaction
+    const codeToUpdateRef = ref(codesDatabaseInternal, `topUpCodes/${codeId}`);
     const userWalletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
-    const transactionResult = await runTransaction(userWalletRef, (walletData) => {
-      if (walletData) {
-        walletData.walletBalance = (walletData.walletBalance || 0) + amountToAdd;
-      } else {
-        walletData = { walletBalance: amountToAdd, createdAt: serverTimestamp() };
-      }
-      walletData.updatedAt = serverTimestamp();
-      return walletData;
+
+    // Create a multi-path update object
+    const updates: { [key: string]: any } = {};
+    updates[`${codeToUpdateRef.parent?.key}/${codeId}/status`] = 'used';
+    updates[`${codeToUpdateRef.parent?.key}/${codeId}/driverId`] = userId;
+    updates[`${codeToUpdateRef.parent?.key}/${codeId}/usedAt`] = serverTimestamp();
+
+    // Run transaction on the user's wallet to ensure atomicity
+    const walletTransactionResult = await runTransaction(userWalletRef, (walletData) => {
+        if (walletData) {
+            walletData.walletBalance = (walletData.walletBalance || 0) + amountToAdd;
+        } else {
+            // If wallet doesn't exist, create it
+            walletData = { walletBalance: amountToAdd, createdAt: serverTimestamp() };
+        }
+        walletData.updatedAt = serverTimestamp();
+        return walletData;
     });
 
-    if (transactionResult.committed && transactionResult.snapshot.exists()) {
-      const newBalance = transactionResult.snapshot.val().walletBalance;
+    if (walletTransactionResult.committed && walletTransactionResult.snapshot.exists()) {
+        const newBalance = walletTransactionResult.snapshot.val().walletBalance;
 
-      // Log transaction in wallet DB
-      await addWalletTransaction(userId, {
-        type: 'charge',
-        amount: amountToAdd,
-        date: serverTimestamp(),
-        description: `تم شحن الرصيد بنجاح باستخدام الكود: ${chargeCode}`
-      });
-
-      // Update code status in codes DB
-      const codeToUpdateRef = ref(codesDatabaseInternal, `topUpCodes/${codeId}`);
-      try {
-        await update(codeToUpdateRef, {
-          status: 'used',
-          driverId: userId,
-          usedAt: serverTimestamp()
+        // If wallet update is successful, apply the update to the code status in the other database
+        await update(ref(codesDatabaseInternal), updates);
+        
+        // Log the transaction in the wallet database
+        await addWalletTransaction(userId, {
+            type: 'charge',
+            amount: amountToAdd,
+            date: serverTimestamp(),
+            description: `تم شحن الرصيد بنجاح باستخدام الكود: ${chargeCode}`
         });
-      } catch (updateError) {
-        console.warn("Client does not have permission to update top-up code status. This should be handled by a backend process.", updateError);
-        // Don't fail the whole operation if this part fails.
-      }
-      
-      return {
-        success: true,
-        message: `تم شحن رصيدك بمبلغ ${amountToAdd.toFixed(2)} د.أ بنجاح!`,
-        newBalance
-      };
+        
+        return {
+            success: true,
+            message: `تم شحن رصيدك بمبلغ ${amountToAdd.toFixed(2)} د.أ بنجاح!`,
+            newBalance
+        };
     } else {
-      throw new Error("فشلت عملية تحديث رصيد المحفظة.");
+        throw new Error("فشلت عملية تحديث رصيد المحفظة. لم يتم استخدام الكود.");
     }
 
   } catch (error: any) {
     console.error("Charge wallet failed: ", error);
     if (error.code === 'PERMISSION_DENIED') {
-      return { success: false, message: "خطأ في صلاحيات الوصول. الرجاء التحقق من قواعد الأمان وقاعدة الفهرسة." };
+        return { success: false, message: "خطأ في صلاحيات الوصول. الرجاء التحقق من قواعد الأمان وقاعدة الفهرسة." };
     }
-    return { success: false, message: "حدث خطأ غير متوقع أثناء شحن الرصيد." };
+    return { success: false, message: `حدث خطأ غير متوقع: ${error.message}` };
   }
 };
-
 
 
 export const getWalletTransactions = async (userId: string): Promise<WalletTransaction[]> => {
