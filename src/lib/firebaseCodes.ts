@@ -9,8 +9,8 @@ const firebaseCodesConfig = {
   databaseURL: "https://codescharging-default-rtdb.firebaseio.com",
   projectId: "codescharging",
   storageBucket: "codescharging.appspot.com", // Assumed from project ID
-  messagingSenderId: "", // Not provided, can be empty
-  appId: "" // Not provided, can be empty
+  messagingSenderId: "189859848553", // From new project info
+  appId: "1:189859848553:web:placeholder" // Can be a placeholder
 };
 
 const CODES_APP_NAME = "codesApp";

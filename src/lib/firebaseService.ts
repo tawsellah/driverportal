@@ -42,6 +42,16 @@ export interface UserProfileTopUpCode {
   createdAt: any; // Or number for timestamp
 }
 
+// Type for the new structure in the codes database
+export interface TopUpCode {
+    id: string;
+    amount: number;
+    code: string;
+    createdAt: number;
+    driverId: string;
+    status: 'unused' | 'used';
+}
+
 export interface UserProfile {
   id: string; 
   fullName: string;
@@ -372,84 +382,91 @@ export const chargeWalletWithCode = async (
   userId: string,
   chargeCodeInput: string
 ): Promise<{ success: boolean; message: string; newBalance?: number }> => {
-  // Use the dedicated codes database for checking, and wallet database for charging
   if (!codesDatabaseInternal || !walletDatabaseInternal) {
     return { success: false, message: "خدمة المحفظة أو الأكواد غير متاحة حالياً." };
   }
 
   const chargeCode = chargeCodeInput.trim().toUpperCase();
-  const codeRef = ref(codesDatabaseInternal, `chargeCodes/${chargeCode}`);
+  const codesQuery = query(ref(codesDatabaseInternal, 'topUpCodes'), orderByChild('code'), equalTo(chargeCode));
 
   try {
-    // 1. Read the code from the 'codes' database.
-    const codeSnapshot = await get(codeRef);
-    if (!codeSnapshot.exists()) {
+    const snapshot = await get(codesQuery);
+    if (!snapshot.exists()) {
       return { success: false, message: "كود الشحن غير صحيح." };
     }
 
-    const codeData = codeSnapshot.val();
+    let codeId: string | null = null;
+    let codeData: TopUpCode | null = null;
+    snapshot.forEach(childSnapshot => {
+      // Since 'code' should be unique, we expect only one result.
+      codeId = childSnapshot.key;
+      codeData = { id: childSnapshot.key!, ...childSnapshot.val() };
+    });
+
+    if (!codeId || !codeData) {
+      return { success: false, message: "كود الشحن غير صحيح." };
+    }
+    
     if (codeData.status !== 'unused') {
       return { success: false, message: "كود الشحن تم استخدامه مسبقاً." };
     }
     
     const amountToAdd = codeData.amount;
     if (!amountToAdd || typeof amountToAdd !== 'number' || amountToAdd <= 0) {
-        return { success: false, message: "كود الشحن يحتوي على قيمة غير صالحة." };
+      return { success: false, message: "كود الشحن يحتوي على قيمة غير صالحة." };
     }
 
-    // 2. If code is valid, run a transaction on the user's wallet in the 'wallet' database.
+    // If code is valid, run a transaction on the user's wallet.
     const userWalletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
     const transactionResult = await runTransaction(userWalletRef, (walletData) => {
-        if (walletData) {
-            walletData.walletBalance = (walletData.walletBalance || 0) + amountToAdd;
-        } else {
-            // If wallet doesn't exist, create it.
-            walletData = { walletBalance: amountToAdd, createdAt: serverTimestamp() };
-        }
-        walletData.updatedAt = serverTimestamp();
-        return walletData;
+      if (walletData) {
+        walletData.walletBalance = (walletData.walletBalance || 0) + amountToAdd;
+      } else {
+        walletData = { walletBalance: amountToAdd, createdAt: serverTimestamp() };
+      }
+      walletData.updatedAt = serverTimestamp();
+      return walletData;
     });
 
-    // 3. If wallet update is successful, log the transaction and update the code status.
     if (transactionResult.committed && transactionResult.snapshot.exists()) {
-        const newBalance = transactionResult.snapshot.val().walletBalance;
+      const newBalance = transactionResult.snapshot.val().walletBalance;
 
-        // Log in wallet DB
-        await addWalletTransaction(userId, {
-            type: 'charge',
-            amount: amountToAdd,
-            date: serverTimestamp(),
-            description: `تم شحن الرصيد بنجاح باستخدام الكود: ${chargeCode}`
+      // Log transaction in wallet DB
+      await addWalletTransaction(userId, {
+        type: 'charge',
+        amount: amountToAdd,
+        date: serverTimestamp(),
+        description: `تم شحن الرصيد بنجاح باستخدام الكود: ${chargeCode}`
+      });
+
+      // Update code status in codes DB
+      const codeToUpdateRef = ref(codesDatabaseInternal, `topUpCodes/${codeId}`);
+      try {
+        await update(codeToUpdateRef, {
+          status: 'used',
+          driverId: userId, // Keep track of who used the code
+          usedAt: serverTimestamp()
         });
-        
-        // Update code status in codes DB (requires admin/backend privileges)
-        // This will fail with current client-side rules, which is the intended security model.
-        // An admin/backend process should listen to walletTransactions and update the code.
-        try {
-          await update(codeRef, { 
-            status: 'used',
-            usedBy: userId,
-            usedAt: serverTimestamp()
-          });
-        } catch (updateError) {
-           console.warn("Client does not have permission to update charge code status. This is expected. An admin process should handle this.");
-        }
-
-        return { 
-          success: true, 
-          message: `تم شحن رصيدك بمبلغ ${amountToAdd.toFixed(2)} د.أ بنجاح!`,
-          newBalance
-        };
+      } catch (updateError) {
+        console.warn("Client does not have permission to update top-up code status. This should be handled by a backend process.", updateError);
+        // Don't fail the whole operation if this part fails.
+      }
+      
+      return {
+        success: true,
+        message: `تم شحن رصيدك بمبلغ ${amountToAdd.toFixed(2)} د.أ بنجاح!`,
+        newBalance
+      };
     } else {
-        throw new Error("فشلت عملية تحديث رصيد المحفظة.");
+      throw new Error("فشلت عملية تحديث رصيد المحفظة.");
     }
 
   } catch (error: any) {
-      console.error("Charge wallet failed: ", error);
-      if (error.code === 'PERMISSION_DENIED') {
-        return { success: false, message: "خطأ في الصلاحيات. لا يمكن التحقق من كود الشحن." };
-      }
-      return { success: false, message: "حدث خطأ غير متوقع أثناء شحن الرصيد." };
+    console.error("Charge wallet failed: ", error);
+    if (error.code === 'PERMISSION_DENIED') {
+      return { success: false, message: "خطأ في الصلاحيات. تأكد من صحة قواعد الأمان وأن الفهرس مضاف." };
+    }
+    return { success: false, message: "حدث خطأ غير متوقع أثناء شحن الرصيد." };
   }
 };
 
@@ -750,6 +767,7 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
 };
 
     
+
 
 
 
