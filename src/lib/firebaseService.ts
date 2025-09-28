@@ -368,15 +368,12 @@ export const chargeWalletWithCode = async (
 
   return runTransaction(codeRef, (codeData) => {
     if (codeData === null) {
-      // Code does not exist
-      return; // Abort transaction
+      return; 
     }
     if (codeData.status === 'used') {
-      // Code already used
-      return; // Abort transaction
+      return; 
     }
     
-    // Code is valid and unused, mark as used
     codeData.status = 'used';
     codeData.usedBy = userId;
     codeData.usedAt = serverTimestamp();
@@ -384,7 +381,6 @@ export const chargeWalletWithCode = async (
     return codeData;
   }).then(async (result) => {
     if (!result.committed) {
-        // The transaction was aborted. Let's check why.
         const snapshot = await get(codeRef);
         if (!snapshot.exists()) {
             return { success: false, message: "كود الشحن غير صحيح." };
@@ -395,7 +391,6 @@ export const chargeWalletWithCode = async (
         return { success: false, message: "فشل شحن الرصيد. الرجاء المحاولة مرة أخرى." };
     }
 
-    // Transaction committed, now update the user's wallet
     const amountToAdd = result.snapshot.val().amount;
     const userWalletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
     
@@ -405,14 +400,12 @@ export const chargeWalletWithCode = async (
             walletData.walletBalance = (walletData.walletBalance || 0) + amountToAdd;
             newBalance = walletData.walletBalance;
         } else {
-            // If wallet doesn't exist, create it
             walletData = { walletBalance: amountToAdd, createdAt: serverTimestamp() };
             newBalance = amountToAdd;
         }
         return walletData;
     });
 
-    // Add a transaction record
     await addWalletTransaction(userId, {
         type: 'charge',
         amount: amountToAdd,
@@ -448,9 +441,10 @@ export const getWalletTransactions = async (userId: string): Promise<WalletTrans
         }
         return [];
     } catch (error: any) {
-        if (error.message && error.message.includes("Index not defined")) {
-            console.error("Firebase Rule Error: Missing index on 'date' for walletTransactions.", error);
-            throw new Error("قواعد بيانات المحفظة تحتاج إلى تحديث. يرجى إضافة فهرس لحقل 'date'.");
+        // This specific error happens when the path does not exist yet.
+        if (error.message && error.message.includes("does not exist")) {
+            console.warn("Wallet transactions path does not exist for user, returning empty array.", error.message);
+            return []; // Gracefully return empty array
         }
         console.error("Error fetching wallet transactions:", error);
         throw error; // Re-throw other errors
@@ -719,3 +713,5 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
     };
     await set(newRequestRef, requestData);
 };
+
+    

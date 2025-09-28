@@ -206,7 +206,13 @@ export default function HistoryPage() {
         }
     } catch (error) {
         console.error("Error fetching initial page data:", error);
-        if (initialLoad) toast({ title: "خطأ في تحميل البيانات", description: "فشل تحميل بيانات الملف الشخصي.", variant: "destructive" });
+        if (initialLoad) {
+            toast({ 
+                title: "خطأ في تحميل البيانات", 
+                description: "فشل تحميل بيانات الملف الشخصي. قد تحتاج لشحن رصيدك.", 
+                variant: "destructive" 
+            });
+        }
     } finally {
         if (initialLoad) setIsLoading(false);
     }
@@ -261,12 +267,11 @@ export default function HistoryPage() {
         setWalletTransactions(transactions);
     } catch (error: any) {
         console.error("Error fetching wallet transactions:", error);
-        setWalletTransactions([]); // Clear transactions on error
-        // Optionally show a toast, but avoid one for the "index" error since it's expected when empty
-        if (!error.message.includes("index")) {
-            toast({ 
+        setWalletTransactions([]);
+        if (!error.message.includes("does not exist")) {
+             toast({ 
                 title: "خطأ في جلب حركات المحفظة", 
-                description: "حدث خطأ غير متوقع.",
+                description: "قد لا يكون لديك أي حركات لعرضها. حاول مرة أخرى لاحقًا.",
                 variant: "destructive" 
             });
         }
@@ -298,7 +303,7 @@ export default function HistoryPage() {
 
     if (result.success) {
       if (result.newBalance !== undefined) {
-          setUserProfile(prev => prev ? ({ ...prev, walletBalance: result.newBalance! }) : null);
+          setUserProfile(prev => prev ? ({ ...prev, walletBalance: result.newBalance! }) : { walletBalance: result.newBalance!, id: currentUserId, fullName: 'مستخدم', email: '', phone: '', status: 'approved', createdAt: Date.now(), rating: 0, tripsCount: 0 });
       }
       setChargeCodeInput(''); 
     }
@@ -394,5 +399,7 @@ export default function HistoryPage() {
     </div>
   );
 }
+
+    
 
     
