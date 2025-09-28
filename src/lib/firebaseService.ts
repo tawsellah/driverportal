@@ -50,6 +50,7 @@ export interface TopUpCode {
     createdAt: number;
     driverId: string;
     status: 'unused' | 'used';
+    usedAt?: any;
 }
 
 export interface UserProfile {
@@ -404,7 +405,7 @@ export const chargeWalletWithCode = async (
     });
 
     if (!codeId || !codeData) {
-      return { success: false, message: "كود الشحن غير صحيح." };
+      return { success: false, message: "حدث خطأ أثناء التحقق من الكود." };
     }
     
     if (codeData.status !== 'unused') {
@@ -444,7 +445,7 @@ export const chargeWalletWithCode = async (
       try {
         await update(codeToUpdateRef, {
           status: 'used',
-          driverId: userId, // Keep track of who used the code
+          driverId: userId,
           usedAt: serverTimestamp()
         });
       } catch (updateError) {
@@ -464,11 +465,12 @@ export const chargeWalletWithCode = async (
   } catch (error: any) {
     console.error("Charge wallet failed: ", error);
     if (error.code === 'PERMISSION_DENIED') {
-      return { success: false, message: "خطأ في الصلاحيات. تأكد من صحة قواعد الأمان وأن الفهرس مضاف." };
+      return { success: false, message: "خطأ في صلاحيات الوصول. الرجاء التحقق من قواعد الأمان وقاعدة الفهرسة." };
     }
     return { success: false, message: "حدث خطأ غير متوقع أثناء شحن الرصيد." };
   }
 };
+
 
 
 export const getWalletTransactions = async (userId: string): Promise<WalletTransaction[]> => {
@@ -773,3 +775,6 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
 
 
 
+
+
+    
