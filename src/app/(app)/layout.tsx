@@ -16,14 +16,6 @@ function AppHeaderContent() {
         توصيلة
       </Link>
       <div className="flex items-center gap-3">
-        {isLoadingProfile ? (
-          <span className="text-sm text-muted-foreground animate-pulse">تحميل...</span>
-        ) : userProfile ? (
-          <div className="text-sm text-right">
-            <div className="font-medium">{userProfile.fullName}</div>
-            <div className="text-xs text-muted-foreground">{userProfile.phone}</div>
-          </div>
-        ) : null}
         <ThemeToggle />
       </div>
     </div>

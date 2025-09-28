@@ -34,6 +34,8 @@ import {
     getTripById 
 } from '@/lib/firebaseService';
 import { useRouter } from 'next/navigation';
+import { useUser } from '@/context/UserContext';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface DisplayPassengerDetails {
   seatId: string;
@@ -256,6 +258,7 @@ export default function TripsPage() {
   const [isLoading, setIsLoading] = useState(true); 
   const router = useRouter();
   const { toast } = useToast();
+  const { userProfile, isLoadingProfile } = useUser();
 
   const [isPassengerDialogOpen, setIsPassengerDialogOpen] = useState(false);
   const [currentTripForPassengers, setCurrentTripForPassengers] = useState<Trip | null>(null);
@@ -462,6 +465,21 @@ export default function TripsPage() {
 
   return (
     <div>
+        <div className="mb-6 p-4 bg-card border rounded-lg">
+            {isLoadingProfile ? (
+            <div className="space-y-2">
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-4 w-24" />
+            </div>
+            ) : userProfile ? (
+            <div>
+                <h2 className="text-xl font-bold text-foreground">{userProfile.fullName}</h2>
+                <p className="text-sm text-muted-foreground">{userProfile.phone}</p>
+            </div>
+            ) : null}
+        </div>
+
+
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl md:text-3xl font-bold h-underline">رحلاتك القادمة والجارية</h1>
         {canCreateTrip ? (
@@ -471,9 +489,8 @@ export default function TripsPage() {
             </Link>
           </Button>
         ) : (
-          <Button disabled size="sm">
+          <Button disabled size="sm" title="لا يمكن إنشاء رحلة جديدة بوجود رحلة نشطة">
             <Plus className="ms-2 h-4 w-4" /> إضافة رحلة جديدة
-            <span className="text-xs me-2">(لديك رحلة نشطة)</span>
           </Button>
         )}
       </div>
