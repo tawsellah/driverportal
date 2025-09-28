@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useEffect, useState, useCallback } from 'react';
@@ -14,7 +15,7 @@ import { JORDAN_GOVERNORATES, SEAT_CONFIG, type SeatID } from '@/lib/constants';
 import { 
     auth, 
     onAuthUserChangedListener, 
-    getCompletedTripsForDriver, 
+    getAllTripsForDriver, 
     type Trip,
     type UserProfile,
     getUserProfile,
@@ -61,6 +62,8 @@ function CompletedTripCard({ trip }: { trip: Trip }) {
           {startPointName} <ArrowLeftShort className="mx-1"/> {destinationName}
           {trip.status === 'cancelled' && <span className="me-auto text-sm font-medium bg-red-100 text-red-700 px-2 py-1 rounded-full">ملغاة</span>}
           {trip.status === 'completed' && <span className="me-auto text-sm font-medium bg-green-100 text-green-700 px-2 py-1 rounded-full">مكتملة</span>}
+          {trip.status === 'ongoing' && <span className="me-auto text-sm font-medium bg-blue-100 text-blue-700 px-2 py-1 rounded-full">جارية</span>}
+          {trip.status === 'upcoming' && <span className="me-auto text-sm font-medium bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full">قادمة</span>}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 text-sm pb-4">
@@ -207,7 +210,7 @@ export default function HistoryPage() {
 
         // Then, fetch trips, handling potential errors gracefully
         try {
-            const trips = await getCompletedTripsForDriver(userId);
+            const trips = await getAllTripsForDriver(userId);
             setAllTrips(trips);
         } catch (tripError) {
             console.warn("Could not fetch completed trips, registry might be empty:", tripError);

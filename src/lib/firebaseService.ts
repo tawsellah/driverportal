@@ -388,10 +388,11 @@ export const chargeWalletWithCode = async (
   }
 
   const chargeCode = chargeCodeInput.trim().toUpperCase();
-  const topUpCodesRef = ref(codesDatabaseInternal, 'topUpCodes');
 
   try {
+    const topUpCodesRef = ref(codesDatabaseInternal, 'topUpCodes');
     const allCodesSnapshot = await get(topUpCodesRef);
+
     if (!allCodesSnapshot.exists()) {
       return { success: false, message: "لا توجد أكواد شحن متاحة في النظام." };
     }
@@ -400,6 +401,7 @@ export const chargeWalletWithCode = async (
     let foundCodeId: string | null = null;
     let foundCodeData: TopUpCode | null = null;
 
+    // Client-side search
     for (const codeId in allCodes) {
       if (allCodes[codeId].code === chargeCode) {
         foundCodeId = codeId;
@@ -424,12 +426,10 @@ export const chargeWalletWithCode = async (
     const codeToUpdateRef = ref(codesDatabaseInternal, `topUpCodes/${foundCodeId}`);
     const userWalletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
 
-    // Use a transaction for the wallet balance
     const walletTransactionResult = await runTransaction(userWalletRef, (walletData) => {
         if (walletData) {
             walletData.walletBalance = (walletData.walletBalance || 0) + amountToAdd;
         } else {
-            // If the user has no wallet, create one
             walletData = { walletBalance: amountToAdd, createdAt: serverTimestamp() };
         }
         walletData.updatedAt = serverTimestamp();
@@ -628,16 +628,34 @@ export const getActiveTripForDriver = async (driverId: string): Promise<Trip | n
 
 export const getCompletedTripsForDriver = async (driverId: string): Promise<Trip[]> => {
   if (!tripsDatabaseInternal) return [];
-  const tripsRef = query(ref(tripsDatabaseInternal, FINISHED_TRIPS_PATH), orderByChild('driverId'), equalTo(driverId));
-  const snapshot = await get(tripsRef);
+  const finishedTripsRef = ref(tripsDatabaseInternal, FINISHED_TRIPS_PATH);
+  const snapshot = await get(finishedTripsRef);
   const trips: Trip[] = [];
   if (snapshot.exists()) {
-    snapshot.forEach((childSnapshot) => {
-      trips.push(childSnapshot.val());
-    });
+    const allTrips = snapshot.val();
+    for (const tripId in allTrips) {
+        const trip = allTrips[tripId];
+        if (trip.driverId === driverId) {
+            trips.push(trip);
+        }
+    }
   }
   // sort by date descending
   return trips.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+};
+
+export const getAllTripsForDriver = async (driverId: string): Promise<Trip[]> => {
+    const upcomingAndOngoing = await getUpcomingAndOngoingTripsForDriver(driverId);
+    const completedAndCancelled = await getCompletedTripsForDriver(driverId);
+    
+    const allTrips = [...upcomingAndOngoing, ...completedAndCancelled];
+    
+    // Sort all trips by date descending (newest first)
+    return allTrips.sort((a, b) => {
+        const dateA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : (typeof a.createdAt === 'number' ? a.createdAt : new Date(a.dateTime).getTime());
+        const dateB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : (typeof b.createdAt === 'number' ? b.createdAt : new Date(b.dateTime).getTime());
+        return dateB - dateA;
+    });
 };
 
 
@@ -775,6 +793,7 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
 
 
     
+
 
 
 
