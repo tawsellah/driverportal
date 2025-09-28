@@ -191,8 +191,14 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
     const profile = snapshot.val() as UserProfile;
     
     // Fetch wallet data from the separate wallet database
-    const walletData = await getWalletData(userId);
-    profile.walletBalance = walletData?.walletBalance || 0;
+    try {
+        const walletData = await getWalletData(userId);
+        profile.walletBalance = walletData?.walletBalance || 0;
+    } catch (walletError) {
+        console.warn("Could not fetch wallet data for profile, defaulting to 0. This is expected if the wallet doesn't exist yet.", walletError);
+        profile.walletBalance = 0;
+    }
+
 
     if (!profile.topUpCodes) {
         profile.topUpCodes = {};
@@ -367,13 +373,14 @@ export const chargeWalletWithCode = async (
   const codeRef = ref(walletDatabaseInternal, `chargeCodes/${chargeCode}`);
 
   return runTransaction(codeRef, (codeData) => {
-    if (codeData === null) {
-      return; 
+    if (codeData === null) { // Code does not exist
+      return; // Abort transaction
     }
-    if (codeData.status === 'used') {
-      return; 
+    if (codeData.status === 'used') { // Code has been used
+      return; // Abort transaction
     }
     
+    // If we are here, code is valid and unused. Mark it as used.
     codeData.status = 'used';
     codeData.usedBy = userId;
     codeData.usedAt = serverTimestamp();
@@ -381,14 +388,8 @@ export const chargeWalletWithCode = async (
     return codeData;
   }).then(async (result) => {
     if (!result.committed) {
-        const snapshot = await get(codeRef);
-        if (!snapshot.exists()) {
-            return { success: false, message: "كود الشحن غير صحيح." };
-        }
-        if (snapshot.val().status === 'used') {
-            return { success: false, message: "كود الشحن هذا تم استخدامه مسبقاً." };
-        }
-        return { success: false, message: "فشل شحن الرصيد. الرجاء المحاولة مرة أخرى." };
+        // The transaction was aborted. This means the code did not exist or was already used.
+        return { success: false, message: "كود الشحن غير صحيح أو تم استخدامه مسبقاً." };
     }
 
     const amountToAdd = result.snapshot.val().amount;
@@ -397,15 +398,18 @@ export const chargeWalletWithCode = async (
     let newBalance = 0;
     await runTransaction(userWalletRef, (walletData) => {
         if (walletData) {
+            // Wallet exists, update balance
             walletData.walletBalance = (walletData.walletBalance || 0) + amountToAdd;
             newBalance = walletData.walletBalance;
         } else {
+            // Wallet doesn't exist, create it with the new balance
             walletData = { walletBalance: amountToAdd, createdAt: serverTimestamp() };
             newBalance = amountToAdd;
         }
         return walletData;
     });
 
+    // Log the successful transaction
     await addWalletTransaction(userId, {
         type: 'charge',
         amount: amountToAdd,
@@ -441,12 +445,16 @@ export const getWalletTransactions = async (userId: string): Promise<WalletTrans
         }
         return [];
     } catch (error: any) {
-        // This specific error happens when the path does not exist yet.
-        if (error.message && error.message.includes("does not exist")) {
-            console.warn("Wallet transactions path does not exist for user, returning empty array.", error.message);
+        if (error.message && (error.message.includes("does not exist") || error.message.includes("Permission denied"))) {
+            console.warn("Wallet transactions path does not exist for user or is inaccessible, returning empty array.", error.message);
             return []; // Gracefully return empty array
         }
         console.error("Error fetching wallet transactions:", error);
+        toast({
+            title: "خطأ في جلب حركات المحفظة",
+            description: "تأكد من إضافة فهرس (.indexOn) لحقل 'date' في قواعد الأمان الخاصة بك.",
+            variant: "destructive",
+        });
         throw error; // Re-throw other errors
     }
 };
