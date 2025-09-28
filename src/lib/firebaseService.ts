@@ -192,27 +192,37 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 export const doesPhoneOrEmailExist = async (phone: string, email: string): Promise<{ phoneExists: boolean, emailExists: boolean }> => {
     if (!databaseInternal) throw new Error("Firebase Database is not initialized.");
     
-    // The query for phone is disabled due to Firebase rules requiring an index.
-    // This check will now only rely on the auth error for email existence.
-    const phoneExists = false;
+    // Check if phone number exists in the public map. This requires the '/phoneEmailMap' path to have public read access.
+    const phoneMapRef = ref(databaseInternal, `phoneEmailMap/${phone}`);
+    const phoneSnapshot = await get(phoneMapRef);
+    const phoneExists = phoneSnapshot.exists();
 
     // We can't directly check for email existence in the 'users' table without read access.
-    // We will rely on Firebase Auth's error for email existence.
+    // We will rely on Firebase Auth's error for email existence, so we can return false here.
     return { phoneExists, emailExists: false };
 };
 
 
 export const getEmailByPhone = async (phone: string): Promise<string | null> => {
-    // This function is disabled to avoid Firebase permission errors.
-    console.warn("getEmailByPhone is disabled due to restrictive Firebase rules.");
+    if (!databaseInternal) return null;
+    // Use the public phoneEmailMap instead of the protected 'users' path
+    // IMPORTANT: This requires '.read': true on the 'phoneEmailMap' path in your Firebase rules.
+    const mapRef = ref(databaseInternal, `phoneEmailMap/${phone}`);
+    const snapshot = await get(mapRef);
+    if (snapshot.exists()) {
+        return snapshot.val().email;
+    }
     return null;
 };
 
 // This function is for internal use during sign-in and password reset.
 // It should not be used to get the full user profile.
 export const getUserByPhone = async (phone: string): Promise<{email: string} | null> => {
-    // This function is disabled to prevent Firebase permission/indexing errors.
-    console.warn("getUserByPhone is disabled due to restrictive Firebase rules.");
+    // This function is now a wrapper around getEmailByPhone
+    const email = await getEmailByPhone(phone);
+    if (email) {
+        return { email };
+    }
     return null;
 };
 
@@ -254,7 +264,9 @@ export const createDriverAccount = async (
         
         await saveUserProfile(userId, finalProfileData);
         
-        // Writing to phoneEmailMap is disabled to avoid permission issues.
+        // Write to phoneEmailMap for login lookup
+        const phoneMapRef = ref(database, `phoneEmailMap/${profileData.phone}`);
+        await set(phoneMapRef, { email: profileData.email });
         
         // Also create an entry in the wallet database
         if (walletDatabaseInternal) {
@@ -270,20 +282,12 @@ export const createDriverAccount = async (
         
         return userId;
     } catch (error: any) {
-        // If user creation succeeded but subsequent database operations failed, delete the auth user
         if (userId) {
-            const user = auth.currentUser;
-            if (user && user.uid === userId) {
-                 // To delete the user, they must have recently signed in. Since we just created them,
-                 // we might need to sign them in again to get a fresh token before deleting.
-                 // This is complex, for now, we log the error. A manual cleanup might be needed.
-                 console.error(`Orphaned user created in Auth with UID: ${userId}. DB operations failed.`, error);
-            }
+            console.error(`Orphaned user created in Auth with UID: ${userId}. DB operations failed.`, error);
         }
         if (error.code === 'auth/email-already-in-use') {
              throw new Error("EMAIL_EXISTS");
         }
-        // Re-throw other errors to be handled by the UI
         throw error;
     }
 };

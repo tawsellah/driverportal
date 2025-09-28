@@ -16,10 +16,10 @@ import { IconInput } from '@/components/shared/icon-input';
 import { auth } from '@/lib/firebase';
 import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { setAuthStatus } from '@/lib/storage';
-import { getUserProfile, getUserByPhone } from '@/lib/firebaseService';
+import { getUserProfile, getEmailByPhone } from '@/lib/firebaseService';
 
 const signInSchema = z.object({
-  email: z.string().email({ message: "الرجاء إدخال بريد إلكتروني صالح." }),
+  phone: z.string().regex(/^07[789]\d{7}$/, { message: "الرجاء إدخال رقم هاتف أردني صالح." }),
   password: z.string().min(6, { message: "كلمة المرور يجب أن تكون 6 أحرف على الأقل." }),
 });
 
@@ -29,6 +29,7 @@ export default function SignInPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [forgotPasswordPhone, setForgotPasswordPhone] = useState("");
 
   const { register, handleSubmit, getValues, formState: { errors } } = useForm<SignInFormValues>({
     resolver: zodResolver(signInSchema),
@@ -38,11 +39,24 @@ export default function SignInPage() {
     setIsLoading(true);
     
     try {
-      // Sign in with email and password
-      const userCredential = await signInWithEmailAndPassword(auth, data.email, data.password);
+      // Step 1: Get email from phone number
+      const email = await getEmailByPhone(data.phone);
+
+      if (!email) {
+        toast({
+          title: "خطأ في تسجيل الدخول",
+          description: "رقم الهاتف غير مسجل. يرجى التحقق من الرقم أو إنشاء حساب جديد.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+      
+      // Step 2: Sign in with the retrieved email and password
+      const userCredential = await signInWithEmailAndPassword(auth, email, data.password);
       const user = userCredential.user;
       
-      // Get full profile and check status
+      // Step 3: Get full profile and check status
       const profile = await getUserProfile(user.uid);
 
       if (profile?.status === 'pending') {
@@ -50,7 +64,7 @@ export default function SignInPage() {
         setAuthStatus(false);
         toast({
           title: "الحساب قيد المراجعة",
-          description: "Your account is still under review. Please wait for approval.",
+          description: "حسابك لا يزال قيد المراجعة. يرجى الانتظار لحين الموافقة عليه.",
           variant: "destructive",
           duration: 5000,
         });
@@ -85,9 +99,11 @@ export default function SignInPage() {
       switch (error.code) {
         case 'auth/invalid-credential':
         case 'auth/wrong-password':
-        case 'auth/user-not-found':
-          errorMessage = "البريد الإلكتروني أو كلمة المرور غير صحيحة. يرجى التحقق من البيانات المدخلة.";
+          errorMessage = "كلمة المرور غير صحيحة. يرجى التحقق مرة أخرى.";
           break;
+        case 'auth/user-not-found':
+           errorMessage = "رقم الهاتف غير مسجل. يرجى التحقق من الرقم أو إنشاء حساب جديد.";
+           break;
         case 'auth/user-disabled':
           errorMessage = "تم تعطيل هذا الحساب. يرجى التواصل مع الدعم.";
           break;
@@ -110,12 +126,12 @@ export default function SignInPage() {
   
   const handleForgotPassword = async (e: React.MouseEvent) => {
     e.preventDefault();
-    const email = getValues("email");
+    const phone = getValues("phone");
 
-    if (!email || !z.string().email().safeParse(email).success) {
+    if (!phone || !z.string().regex(/^07[789]\d{7}$/).safeParse(phone).success) {
         toast({
-            title: "البريد الإلكتروني مطلوب",
-            description: "الرجاء إدخال بريدك الإلكتروني المسجل أولاً لإرسال رابط استعادة كلمة المرور.",
+            title: "رقم الهاتف مطلوب",
+            description: "الرجاء إدخال رقم هاتفك المسجل أولاً لإرسال رابط استعادة كلمة المرور.",
             variant: "destructive",
         });
         return;
@@ -123,6 +139,17 @@ export default function SignInPage() {
 
     setIsLoading(true);
     try {
+        const email = await getEmailByPhone(phone);
+        if (!email) {
+            toast({
+                title: "خطأ",
+                description: "لم يتم العثور على حساب مرتبط برقم الهاتف هذا.",
+                variant: "destructive",
+            });
+            setIsLoading(false);
+            return;
+        }
+
         await sendPasswordResetEmail(auth, email);
         toast({
             title: "تم إرسال رابط استعادة كلمة المرور",
@@ -130,13 +157,9 @@ export default function SignInPage() {
         });
     } catch(error: any) {
         console.error("Forgot Password Error:", error);
-        let message = "حدث خطأ أثناء محاولة إرسال بريد استعادة كلمة المرور. يرجى المحاولة مرة أخرى.";
-        if (error.code === 'auth/user-not-found') {
-            message = "لم يتم العثور على حساب مرتبط بهذا البريد الإلكتروني.";
-        }
         toast({
             title: "خطأ في إرسال البريد",
-            description: message,
+            description: "حدث خطأ أثناء محاولة إرسال بريد استعادة كلمة المرور. يرجى المحاولة مرة أخرى.",
             variant: "destructive",
         });
     } finally {
@@ -150,18 +173,18 @@ export default function SignInPage() {
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <div className="space-y-4">
           <div>
-            <Label htmlFor="email">البريد الإلكتروني</Label>
+            <Label htmlFor="phone">رقم الهاتف</Label>
             <IconInput
-              id="email"
-              type="email"
-              icon={Mail}
-              placeholder="أدخل بريدك الإلكتروني"
-              {...register('email')}
-              className={`text-left ${errors.email ? 'border-destructive' : ''}`}
+              id="phone"
+              type="tel"
+              icon={Phone}
+              placeholder="أدخل رقم هاتفك"
+              {...register('phone')}
+              className={`text-left ${errors.phone ? 'border-destructive' : ''}`}
               dir="ltr"
-              aria-invalid={errors.email ? "true" : "false"}
+              aria-invalid={errors.phone ? "true" : "false"}
             />
-            {errors.email && <p className="mt-1 text-sm text-destructive">{errors.email.message}</p>}
+            {errors.phone && <p className="mt-1 text-sm text-destructive">{errors.phone.message}</p>}
           </div>
 
           <div>
