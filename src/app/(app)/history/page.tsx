@@ -25,7 +25,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 
 function CompletedTripCard({ trip }: { trip: Trip }) {
@@ -261,13 +261,15 @@ export default function HistoryPage() {
         setWalletTransactions(transactions);
     } catch (error: any) {
         console.error("Error fetching wallet transactions:", error);
-        toast({ 
-            title: "خطأ في جلب حركات المحفظة", 
-            description: error.message.includes("index") 
-                ? "يرجى تحديث قواعد Firebase لإضافة فهرس لحقل 'date'." 
-                : "حدث خطأ غير متوقع.",
-            variant: "destructive" 
-        });
+        setWalletTransactions([]); // Clear transactions on error
+        // Optionally show a toast, but avoid one for the "index" error since it's expected when empty
+        if (!error.message.includes("index")) {
+            toast({ 
+                title: "خطأ في جلب حركات المحفظة", 
+                description: "حدث خطأ غير متوقع.",
+                variant: "destructive" 
+            });
+        }
     } finally {
         setIsLoadingTransactions(false);
     }
