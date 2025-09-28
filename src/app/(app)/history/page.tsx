@@ -259,9 +259,15 @@ export default function HistoryPage() {
     try {
         const transactions = await getWalletTransactions(currentUserId);
         setWalletTransactions(transactions);
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error fetching wallet transactions:", error);
-        toast({ title: "خطأ في جلب حركات المحفظة", variant: "destructive" });
+        toast({ 
+            title: "خطأ في جلب حركات المحفظة", 
+            description: error.message.includes("index") 
+                ? "يرجى تحديث قواعد Firebase لإضافة فهرس لحقل 'date'." 
+                : "حدث خطأ غير متوقع.",
+            variant: "destructive" 
+        });
     } finally {
         setIsLoadingTransactions(false);
     }

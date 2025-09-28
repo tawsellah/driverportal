@@ -66,6 +66,8 @@ export interface UserProfile {
   status: 'pending' | 'approved' | 'rejected' | 'suspended';
   createdAt: any; 
   updatedAt?: any;
+  rating: number;
+  tripsCount: number;
 }
 
 export interface WalletTransaction {
@@ -113,9 +115,10 @@ export interface Trip {
   earnings?: number;
   createdAt: any; 
   updatedAt?: any; 
+  selectedSeats: SeatID[];
 }
 
-export type NewTripData = Omit<Trip, 'id' | 'status' | 'earnings' | 'driverId' | 'createdAt' | 'updatedAt'>;
+export type NewTripData = Omit<Trip, 'id' | 'status' | 'earnings' | 'driverId' | 'createdAt' | 'updatedAt' | 'selectedSeats'>;
 
 export interface SupportRequestData {
   userId: string;
@@ -433,16 +436,25 @@ export const chargeWalletWithCode = async (
 
 export const getWalletTransactions = async (userId: string): Promise<WalletTransaction[]> => {
     if (!walletDatabaseInternal) return [];
-    const transactionsRef = query(ref(walletDatabaseInternal, `walletTransactions/${userId}`), orderByChild('date'));
-    const snapshot = await get(transactionsRef);
-    if (snapshot.exists()) {
-        const transactions: WalletTransaction[] = [];
-        snapshot.forEach((childSnapshot) => {
-            transactions.push({ id: childSnapshot.key!, ...childSnapshot.val() });
-        });
-        return transactions.reverse(); // Show most recent first
+    try {
+        const transactionsRef = query(ref(walletDatabaseInternal, `walletTransactions/${userId}`), orderByChild('date'));
+        const snapshot = await get(transactionsRef);
+        if (snapshot.exists()) {
+            const transactions: WalletTransaction[] = [];
+            snapshot.forEach((childSnapshot) => {
+                transactions.push({ id: childSnapshot.key!, ...childSnapshot.val() });
+            });
+            return transactions.reverse(); // Show most recent first
+        }
+        return [];
+    } catch (error: any) {
+        if (error.message && error.message.includes("Index not defined")) {
+            console.error("Firebase Rule Error: Missing index on 'date' for walletTransactions.", error);
+            throw new Error("قواعد بيانات المحفظة تحتاج إلى تحديث. يرجى إضافة فهرس لحقل 'date'.");
+        }
+        console.error("Error fetching wallet transactions:", error);
+        throw error; // Re-throw other errors
     }
-    return [];
 };
 
 
@@ -465,6 +477,7 @@ export const addTrip = async (driverId: string, tripData: NewTripData): Promise<
     ...tripData,
     status: 'upcoming',
     createdAt: serverTimestamp(),
+    selectedSeats: [],
   };
 
   await set(newTripRef, fullTripData);
