@@ -16,14 +16,15 @@ import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { 
-    getUserProfile, 
     updateUserProfile, 
-    type UserProfile
+    type UserProfile,
+    getUserProfile,
 } from '@/lib/firebaseService'; 
 import { setAuthStatus } from '@/lib/storage';
 import { Checkbox } from "@/components/ui/checkbox";
 import { ChangePasswordDialog } from '@/components/profile/change-password-dialog';
 import { IconInput } from '@/components/shared/icon-input';
+import { useUser } from '@/context/UserContext';
 
 
 const profileSchema = z.object({
@@ -76,12 +77,14 @@ async function uploadFileToImageKit(file: File): Promise<string | null> {
 export default function ProfilePage() {
   const { toast } = useToast();
   const router = useRouter();
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const { userProfile, isLoadingProfile } = useUser();
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isFetchingProfile, setIsFetchingProfile] = useState(true);
   const [newPhotoFile, setNewPhotoFile] = useState<File | null>(null);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  
+  // Local state to manage profile for editing purposes without directly mutating context
+  const [editableProfile, setEditableProfile] = useState<UserProfile | null>(null);
 
   const { control, handleSubmit, register, reset, watch, formState: { errors } } = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
@@ -96,31 +99,14 @@ export default function ProfilePage() {
   });
 
   useEffect(() => {
-    const fetchProfile = async () => {
-      setIsFetchingProfile(true);
-      const currentUser = auth.currentUser;
-      if (currentUser) {
-        try {
-            const profile = await getUserProfile(currentUser.uid);
-            setUserProfile(profile);
-            if (profile) {
-              reset({
-                paymentMethods: profile.paymentMethods || { cash: true, click: false, clickCode: '' },
-                secondaryPhone: profile.secondaryPhone || '',
-              });
-            }
-        } catch (error) {
-            console.error("Error fetching user profile:", error);
-            toast({ title: "خطأ في تحميل الملف الشخصي", variant: "destructive" });
-        }
-      } else {
-        toast({ title: "لم يتم العثور على الملف الشخصي أو المستخدم غير مسجل", variant: "destructive" });
-        router.push('/auth/signin');
-      }
-      setIsFetchingProfile(false);
-    };
-    fetchProfile();
-  }, [reset, toast, router]);
+    if (userProfile) {
+        setEditableProfile(userProfile);
+        reset({
+            paymentMethods: userProfile.paymentMethods || { cash: true, click: false, clickCode: '' },
+            secondaryPhone: userProfile.secondaryPhone || '',
+        });
+    }
+  }, [userProfile, reset]);
 
   const paymentMethodsWatched = watch("paymentMethods");
 
@@ -131,10 +117,10 @@ export default function ProfilePage() {
   };
 
   const onSubmit = async (data: ProfileFormValues) => {
-    if (!userProfile || !auth.currentUser) return;
+    if (!editableProfile || !auth.currentUser) return;
     setIsLoading(true);
     
-    let actualUploadedPhotoUrl: string | null = userProfile.idPhotoUrl || null;
+    let actualUploadedPhotoUrl: string | null = editableProfile.idPhotoUrl || null;
     if (newPhotoFile) {
       const uploadedUrl = await uploadFileToImageKit(newPhotoFile);
       if (uploadedUrl) {
@@ -156,11 +142,12 @@ export default function ProfilePage() {
 
     try {
       await updateUserProfile(auth.currentUser.uid, updates);
+      // The UserContext will automatically update the profile, so we just need to re-sync our local editable state
       const refreshedProfile = await getUserProfile(auth.currentUser.uid);
-      setUserProfile(refreshedProfile); 
+      setEditableProfile(refreshedProfile); 
        if (refreshedProfile) {
           reset({ 
-            paymentMethods: refreshedProfile.paymentMethods || { cash: true, click: false, clickCode: '' },
+            paymentMethods: refreshedProfile.paymentMethods || { cash: true, click: false, clickCode: '' }, 
             secondaryPhone: refreshedProfile.secondaryPhone || '',
           });
         }
@@ -187,7 +174,7 @@ export default function ProfilePage() {
     }
   };
   
-  if (isFetchingProfile) {
+  if (isLoadingProfile) {
      return (
       <div className="flex justify-center items-center h-64">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -196,8 +183,9 @@ export default function ProfilePage() {
   }
 
   // Use a default/mock profile to prevent crashes when userProfile is null
-  const displayProfile = userProfile || {
+  const displayProfile = editableProfile || {
     fullName: 'اسم السائق',
+    email: 'email@example.com',
     rating: 0,
     tripsCount: 0,
     phone: '0790000000',
@@ -364,3 +352,5 @@ export default function ProfilePage() {
     </div>
   );
 }
+
+    
