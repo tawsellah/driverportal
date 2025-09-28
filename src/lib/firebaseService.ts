@@ -388,23 +388,29 @@ export const chargeWalletWithCode = async (
   }
 
   const chargeCode = chargeCodeInput.trim().toUpperCase();
-  const codesQuery = query(ref(codesDatabaseInternal, 'topUpCodes'), orderByChild('code'), equalTo(chargeCode));
+  const topUpCodesRef = ref(codesDatabaseInternal, 'topUpCodes');
 
   try {
-    const snapshot = await get(codesQuery);
+    const snapshot = await get(topUpCodesRef);
     if (!snapshot.exists()) {
-      return { success: false, message: "كود الشحن غير صحيح." };
+      return { success: false, message: "لا توجد أكواد شحن متاحة." };
     }
 
+    const allCodes = snapshot.val();
     let codeId: string | null = null;
     let codeData: TopUpCode | null = null;
-    snapshot.forEach(childSnapshot => {
-      codeId = childSnapshot.key;
-      codeData = childSnapshot.val();
-    });
+
+    // Find the code by iterating through the fetched data
+    for (const id in allCodes) {
+      if (allCodes[id].code === chargeCode) {
+        codeId = id;
+        codeData = allCodes[id];
+        break;
+      }
+    }
 
     if (!codeId || !codeData) {
-      return { success: false, message: "خطأ في قراءة بيانات الكود." };
+      return { success: false, message: "كود الشحن غير صحيح." };
     }
 
     if (codeData.status !== 'unused') {
