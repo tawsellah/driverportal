@@ -187,10 +187,9 @@ export default function HistoryPage() {
   const fetchInitialData = useCallback(async (userId: string, initialLoad: boolean = true) => {
     if (initialLoad) setIsLoading(true);
     try {
-      // Trips are disabled, profile is enabled
       const [trips, profile] = await Promise.all([
-        Promise.resolve([] as Trip[]), // getCompletedTripsForDriver(userId),
-        getUserProfile(userId)
+         getCompletedTripsForDriver(userId),
+         getUserProfile(userId)
       ]);
       setAllTrips(trips);
       setUserProfile(profile);
@@ -375,5 +374,3 @@ export default function HistoryPage() {
     </div>
   );
 }
-
-    
