@@ -79,18 +79,25 @@ export default function CreateTripPage() {
       const currentUser = auth.currentUser;
       if (currentUser) {
         try {
-          const [activeTrip, profile] = await Promise.all([
-            getActiveTripForDriver(currentUser.uid),
-            getUserProfile(currentUser.uid)
-          ]);
-          if (activeTrip) {
-            setHasActiveTrip(true);
-          }
-          setUserProfile(profile);
+            const profile = await getUserProfile(currentUser.uid);
+            setUserProfile(profile);
+
+            let activeTrip = null;
+            try {
+                activeTrip = await getActiveTripForDriver(currentUser.uid);
+            } catch (tripError) {
+                console.warn("Could not check for active trip, assuming none exists.", tripError);
+                // This is expected if 'currentTrips' node doesn't exist yet.
+            }
+            
+            if (activeTrip) {
+              setHasActiveTrip(true);
+            }
+
         } catch (error) {
            console.error("Error checking initial state:", error);
-           toast({ title: "خطأ في تحميل البيانات", variant: "destructive" });
-           router.push('/trips'); // Redirect if we can't load data
+           toast({ title: "خطأ في تحميل البيانات", description: "فشل تحميل بيانات الملف الشخصي.", variant: "destructive" });
+           router.push('/trips'); // Redirect if we can't load critical data
         }
       } else {
         router.push('/auth/signin');
@@ -452,3 +459,5 @@ export default function CreateTripPage() {
     </Card>
   );
 }
+
+    
