@@ -43,6 +43,21 @@ export function UserProvider({ children }: { children: ReactNode }) {
           if (snapshot.exists()) {
             const profile = snapshot.val() as UserProfile;
 
+            if (profile.status === 'pending') {
+              signOut(auth); 
+              setAuthStatus(false);
+              setUserProfile(null); 
+              setIsLoadingProfile(false); 
+              toast({
+                title: "الحساب قيد المراجعة",
+                description: "حسابك لا يزال قيد المراجعة. يرجى الانتظار لحين الموافقة عليه.",
+                variant: "destructive",
+                duration: 5000,
+              });
+              router.push('/auth/signin'); 
+              return; 
+            }
+
             // --- Access Control Logic for real-time changes ---
             if (profile.status === 'suspended') {
               signOut(auth); 
@@ -61,10 +76,16 @@ export function UserProvider({ children }: { children: ReactNode }) {
             
             setUserProfile(profile);
           } else {
-             // Profile doesn't exist, which might be a temporary state during signup.
-             // We don't sign out here anymore to prevent logging out on refresh.
-             // The sign-in page logic will handle access control.
+             // Profile doesn't exist, sign out the user to prevent access to the app
+             signOut(auth);
+             setAuthStatus(false);
              setUserProfile(null);
+             toast({
+                title: "خطأ في الحساب",
+                description: "لم يتم العثور على ملفك الشخصي. قد يكون الحساب محذوفاً.",
+                variant: "destructive",
+             });
+             router.push('/auth/signin');
           }
           setIsLoadingProfile(false);
         }, (error) => {

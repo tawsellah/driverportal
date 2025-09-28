@@ -14,9 +14,9 @@ import { useToast } from '@/hooks/use-toast';
 import { Mail, Lock, LogIn, ArrowLeft, Loader2, Phone } from 'lucide-react';
 import { IconInput } from '@/components/shared/icon-input';
 import { auth } from '@/lib/firebase';
-import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { setAuthStatus } from '@/lib/storage';
-import { getUserProfile, getEmailByPhone } from '@/lib/firebaseService';
+import { getEmailByPhone } from '@/lib/firebaseService';
 
 const signInSchema = z.object({
   phone: z.string().regex(/^07[789]\d{7}$/, { message: "الرجاء إدخال رقم هاتف أردني صالح." }),
@@ -29,7 +29,6 @@ export default function SignInPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [forgotPasswordPhone, setForgotPasswordPhone] = useState("");
 
   const { register, handleSubmit, getValues, formState: { errors } } = useForm<SignInFormValues>({
     resolver: zodResolver(signInSchema),
@@ -53,38 +52,9 @@ export default function SignInPage() {
       }
       
       // Step 2: Sign in with the retrieved email and password
-      const userCredential = await signInWithEmailAndPassword(auth, email, data.password);
-      const user = userCredential.user;
+      await signInWithEmailAndPassword(auth, email, data.password);
       
-      // Step 3: Get full profile and check status
-      const profile = await getUserProfile(user.uid);
-
-      if (profile?.status === 'pending') {
-        await signOut(auth);
-        setAuthStatus(false);
-        toast({
-          title: "الحساب قيد المراجعة",
-          description: "حسابك لا يزال قيد المراجعة. يرجى الانتظار لحين الموافقة عليه.",
-          variant: "destructive",
-          duration: 5000,
-        });
-        setIsLoading(false);
-        return;
-      }
-
-      if (profile?.status === 'suspended') {
-        await signOut(auth);
-        setAuthStatus(false);
-        toast({
-          title: "تم تعليق حسابك",
-          description: "تم تعليق حسابك بسبب مخالفة السياسات. يرجى التواصل مع الدعم لمزيد من التفاصيل.",
-          variant: "destructive",
-          duration: 5000,
-        });
-        setIsLoading(false);
-        return;
-      }
-      
+      // Step 3: Set auth status and redirect. Profile checking is now handled by UserProvider.
       setAuthStatus(true);
       toast({
         title: "تم تسجيل الدخول بنجاح!",
