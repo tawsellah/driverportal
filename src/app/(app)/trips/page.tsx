@@ -270,56 +270,62 @@ export default function TripsPage() {
     }
     const currentUser = auth.currentUser;
     if (currentUser) {
-      let anUpcomingTripWasAutoStarted = false;
-      try {
-        const loadedTrips = await getUpcomingAndOngoingTripsForDriver(currentUser.uid);
-        let tripsToUpdateLocally = [...loadedTrips];
+        let tripsToUpdateLocally: Trip[] = [];
+        try {
+            const loadedTrips = await getUpcomingAndOngoingTripsForDriver(currentUser.uid);
+            tripsToUpdateLocally = [...loadedTrips];
 
-        const now = new Date();
-        for (const trip of loadedTrips) {
-          if (trip.status === 'upcoming') {
-            const tripDateTime = new Date(trip.dateTime);
-            if (now >= tripDateTime) {
-              try {
-                await fbStartTrip(trip.id); // This updates DB
-                toast({
-                  title: "تم بدء الرحلة تلقائياً",
-                  description: `بدأت رحلتك إلى ${JORDAN_GOVERNORATES.find(g => g.id === trip.destination)?.name || trip.destination}.`,
-                });
-                anUpcomingTripWasAutoStarted = true;
-                tripsToUpdateLocally = tripsToUpdateLocally.map(t => 
-                  t.id === trip.id ? { ...t, status: 'ongoing' as const } : t
-                );
-              } catch (startError: any) {
-                console.error(`Error auto-starting trip ${trip.id}:`, startError);
-                // Optionally, toast if it's not a 'trip already ongoing or not found' type error
-                if (startError.message && !startError.message.toLowerCase().includes("upcoming") && !startError.message.toLowerCase().includes("found")) {
-                    toast({ title: "خطأ في البدء التلقائي", description: startError.message, variant: "destructive"});
+            const now = new Date();
+            for (const trip of loadedTrips) {
+                if (trip.status === 'upcoming') {
+                    const tripDateTime = new Date(trip.dateTime);
+                    if (now >= tripDateTime) {
+                        try {
+                            await fbStartTrip(trip.id); // This updates DB
+                            toast({
+                                title: "تم بدء الرحلة تلقائياً",
+                                description: `بدأت رحلتك إلى ${JORDAN_GOVERNORATES.find(g => g.id === trip.destination)?.name || trip.destination}.`,
+                            });
+                            tripsToUpdateLocally = tripsToUpdateLocally.map(t =>
+                                t.id === trip.id ? { ...t, status: 'ongoing' as const } : t
+                            );
+                        } catch (startError: any) {
+                            console.error(`Error auto-starting trip ${trip.id}:`, startError);
+                            if (startError.message && !startError.message.toLowerCase().includes("upcoming") && !startError.message.toLowerCase().includes("found")) {
+                                toast({ title: "خطأ في البدء التلقائي", description: startError.message, variant: "destructive" });
+                            }
+                        }
+                    }
                 }
-              }
             }
-          }
-        }
-        
-        setTrips(tripsToUpdateLocally);
+        } catch (error) {
+            console.warn("Could not fetch upcoming trips, registry might be empty:", error);
+            tripsToUpdateLocally = []; // Set to empty array on error
+             toast({
+                title: "ملاحظة",
+                description: "لم يتم العثور على سجل رحلات قادمة.",
+                variant: "default"
+            });
+        } finally {
+            setTrips(tripsToUpdateLocally);
+            try {
+                const activeTrip = await getActiveTripForDriver(currentUser.uid);
+                setCanCreateTrip(!activeTrip);
+            } catch (error) {
+                console.error("Error checking for active trip:", error);
+                setCanCreateTrip(false); // Assume cannot create if check fails
+            }
 
-        const activeTrip = await getActiveTripForDriver(currentUser.uid);
-        setCanCreateTrip(!activeTrip);
-
-      } catch (error) {
-        console.error("Error fetching trip data:", error);
-        toast({ title: "خطأ في جلب بيانات الرحلات", description: "الرجاء المحاولة مرة أخرى لاحقاً.", variant: "destructive" });
-      } finally {
-        if (isInitialLoad) {
-          setIsLoading(false);
+            if (isInitialLoad) {
+                setIsLoading(false);
+            }
         }
-      }
     } else {
-      setTrips([]);
-      setCanCreateTrip(false);
-      if (isInitialLoad) {
-        setIsLoading(false);
-      }
+        setTrips([]);
+        setCanCreateTrip(false);
+        if (isInitialLoad) {
+            setIsLoading(false);
+        }
     }
   }, [toast]); 
 
