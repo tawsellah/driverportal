@@ -388,7 +388,6 @@ export const chargeWalletWithCode = async (
   }
 
   const chargeCode = chargeCodeInput.trim().toUpperCase();
-  // Fetch all codes instead of querying
   const topUpCodesRef = ref(codesDatabaseInternal, 'topUpCodes');
 
   try {
@@ -401,7 +400,6 @@ export const chargeWalletWithCode = async (
     let foundCodeId: string | null = null;
     let foundCodeData: TopUpCode | null = null;
 
-    // Manually iterate and find the code on the client-side
     for (const codeId in allCodes) {
       if (allCodes[codeId].code === chargeCode) {
         foundCodeId = codeId;
@@ -424,7 +422,6 @@ export const chargeWalletWithCode = async (
     }
     
     const codeToUpdateRef = ref(codesDatabaseInternal, `topUpCodes/${foundCodeId}`);
-    
     const userWalletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
 
     // Use a transaction for the wallet balance
@@ -439,18 +436,15 @@ export const chargeWalletWithCode = async (
         return walletData;
     });
 
-    // If the wallet transaction was successful, update the code status
     if (walletTransactionResult.committed && walletTransactionResult.snapshot.exists()) {
         const newBalance = walletTransactionResult.snapshot.val().walletBalance;
 
-        // Now update the code status permanently
         await update(codeToUpdateRef, {
             status: 'used',
             driverId: userId,
             usedAt: serverTimestamp()
         });
         
-        // Add a record of the transaction in the wallet DB
         await addWalletTransaction(userId, {
             type: 'charge',
             amount: amountToAdd,
@@ -464,7 +458,6 @@ export const chargeWalletWithCode = async (
             newBalance
         };
     } else {
-        // If wallet transaction failed, do not update the code and throw an error
         throw new Error("فشلت عملية تحديث رصيد المحفظة.");
     }
 
@@ -478,24 +471,22 @@ export const chargeWalletWithCode = async (
 export const getWalletTransactions = async (userId: string): Promise<WalletTransaction[]> => {
     if (!walletDatabaseInternal) return [];
     try {
-        const transactionsRef = query(ref(walletDatabaseInternal, `walletTransactions/${userId}`), orderByChild('date'));
+        const transactionsRef = ref(walletDatabaseInternal, `walletTransactions/${userId}`);
         const snapshot = await get(transactionsRef);
         if (snapshot.exists()) {
             const transactions: WalletTransaction[] = [];
-            snapshot.forEach((childSnapshot) => {
-                transactions.push({ id: childSnapshot.key!, ...childSnapshot.val() });
-            });
-            return transactions.reverse(); // Show most recent first
+            const data = snapshot.val();
+            for(const txId in data){
+                transactions.push({ id: txId, ...data[txId] });
+            }
+            // Sort by date descending (newest first)
+            return transactions.sort((a, b) => (b.date || 0) - (a.date || 0));
         }
         return [];
     } catch (error: any) {
-        // Gracefully handle cases where the transactions path doesn't exist yet.
-        if (error.message && (error.message.includes("does not exist") || error.message.includes("Permission denied"))) {
-            console.warn("Wallet transactions path does not exist for user or is inaccessible, returning empty array.", error.message);
-            return [];
-        }
         console.error("Error fetching wallet transactions:", error);
-        throw error;
+        // Do not throw, just return empty so the UI doesn't crash
+        return [];
     }
 };
 
@@ -784,6 +775,7 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
 
 
     
+
 
 
 
