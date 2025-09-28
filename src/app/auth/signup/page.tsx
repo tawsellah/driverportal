@@ -108,7 +108,7 @@ export default function SignUpPage() {
     setIsLoading(true);
 
     try {
-        const { phoneExists, emailExists } = await doesPhoneOrEmailExist(data.phone, data.email);
+        const { phoneExists } = await doesPhoneOrEmailExist(data.phone, data.email);
         
         if (phoneExists) {
             toast({ title: "خطأ في التسجيل", description: "رقم الهاتف هذا مسجل بالفعل. يرجى استخدام رقم آخر أو تسجيل الدخول.", variant: "destructive" });
@@ -155,7 +155,7 @@ export default function SignUpPage() {
     } catch (error: any) {
         console.error("Signup Error:", error);
         let errorMessage = "حدث خطأ أثناء إنشاء الحساب. الرجاء المحاولة مرة أخرى.";
-        if (error.message === 'EMAIL_EXISTS' || error.code === 'auth/email-already-in-use') {
+        if (error.message === 'EMAIL_EXISTS' || (error.code && error.code === 'auth/email-already-in-use')) {
             errorMessage = "هذا البريد الإلكتروني مسجل بالفعل. يرجى استخدام بريد آخر أو تسجيل الدخول.";
         }
         toast({
@@ -322,3 +322,5 @@ export default function SignUpPage() {
     </div>
   );
 }
+
+    
