@@ -5,6 +5,7 @@
 import { auth as authInternal , database as databaseInternal } from './firebase'; 
 import { database as walletDatabaseInternal } from './firebaseWallet';
 import { database as tripsDatabaseInternal } from './firebaseTrips';
+import { database as codesDatabaseInternal } from './firebaseCodes'; // Import the new codes database
 import { 
   onAuthStateChanged,
   type User as FirebaseAuthUser,
@@ -371,16 +372,16 @@ export const chargeWalletWithCode = async (
   userId: string,
   chargeCodeInput: string
 ): Promise<{ success: boolean; message: string; newBalance?: number }> => {
-  if (!walletDatabaseInternal) {
-    return { success: false, message: "خدمة المحفظة غير متاحة حالياً." };
+  // Use the dedicated codes database for checking, and wallet database for charging
+  if (!codesDatabaseInternal || !walletDatabaseInternal) {
+    return { success: false, message: "خدمة المحفظة أو الأكواد غير متاحة حالياً." };
   }
 
   const chargeCode = chargeCodeInput.trim().toUpperCase();
-  const codeRef = ref(walletDatabaseInternal, `chargeCodes/${chargeCode}`);
-  const userWalletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
+  const codeRef = ref(codesDatabaseInternal, `chargeCodes/${chargeCode}`);
 
   try {
-    // 1. Read the code to check its validity.
+    // 1. Read the code from the 'codes' database.
     const codeSnapshot = await get(codeRef);
     if (!codeSnapshot.exists()) {
       return { success: false, message: "كود الشحن غير صحيح." };
@@ -396,21 +397,24 @@ export const chargeWalletWithCode = async (
         return { success: false, message: "كود الشحن يحتوي على قيمة غير صالحة." };
     }
 
-    // 2. If the code is valid, run a transaction on the user's wallet.
+    // 2. If code is valid, run a transaction on the user's wallet in the 'wallet' database.
+    const userWalletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
     const transactionResult = await runTransaction(userWalletRef, (walletData) => {
         if (walletData) {
             walletData.walletBalance = (walletData.walletBalance || 0) + amountToAdd;
         } else {
+            // If wallet doesn't exist, create it.
             walletData = { walletBalance: amountToAdd, createdAt: serverTimestamp() };
         }
         walletData.updatedAt = serverTimestamp();
         return walletData;
     });
 
+    // 3. If wallet update is successful, log the transaction and update the code status.
     if (transactionResult.committed && transactionResult.snapshot.exists()) {
         const newBalance = transactionResult.snapshot.val().walletBalance;
 
-        // 3. Log the successful transaction.
+        // Log in wallet DB
         await addWalletTransaction(userId, {
             type: 'charge',
             amount: amountToAdd,
@@ -418,9 +422,18 @@ export const chargeWalletWithCode = async (
             description: `تم شحن الرصيد بنجاح باستخدام الكود: ${chargeCode}`
         });
         
-        // IMPORTANT: The backend/admin is responsible for marking the code as 'used'
-        // after seeing the walletTransaction log. We do not do it from the client
-        // to respect the security rules.
+        // Update code status in codes DB (requires admin/backend privileges)
+        // This will fail with current client-side rules, which is the intended security model.
+        // An admin/backend process should listen to walletTransactions and update the code.
+        try {
+          await update(codeRef, { 
+            status: 'used',
+            usedBy: userId,
+            usedAt: serverTimestamp()
+          });
+        } catch (updateError) {
+           console.warn("Client does not have permission to update charge code status. This is expected. An admin process should handle this.");
+        }
 
         return { 
           success: true, 
@@ -737,6 +750,7 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
 };
 
     
+
 
 
 
