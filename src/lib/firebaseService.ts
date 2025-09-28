@@ -67,6 +67,15 @@ export interface UserProfile {
   updatedAt?: any;
 }
 
+export interface WalletTransaction {
+    id: string;
+    type: 'charge' | 'trip_earning' | 'trip_fee' | 'system_adjustment';
+    amount: number; // Positive for income, negative for outcome
+    date: any; // serverTimestamp
+    description: string;
+    tripId?: string;
+}
+
 
 export interface WaitingListDriverProfile {
   fullName: string;
@@ -332,6 +341,16 @@ export const addDriverToWaitingList = async (
 
 // --- Wallet Service (Charge Code Logic) ---
 
+const addWalletTransaction = async (userId: string, transaction: Omit<WalletTransaction, 'id'>): Promise<void> => {
+    if (!walletDatabaseInternal) return;
+    const transactionsRef = ref(walletDatabaseInternal, `walletTransactions/${userId}`);
+    const newTransactionRef = push(transactionsRef);
+    await set(newTransactionRef, {
+        id: newTransactionRef.key,
+        ...transaction,
+    });
+};
+
 export const chargeWalletWithCode = async (
   userId: string,
   chargeCodeInput: string
@@ -389,6 +408,15 @@ export const chargeWalletWithCode = async (
         return walletData;
     });
 
+    // Add a transaction record
+    await addWalletTransaction(userId, {
+        type: 'charge',
+        amount: amountToAdd,
+        date: serverTimestamp(),
+        description: `شحن رصيد باستخدام كود: ${chargeCode}`
+    });
+
+
     return { 
       success: true, 
       message: `تم شحن رصيدك بمبلغ ${amountToAdd.toFixed(2)} د.أ بنجاح!`,
@@ -399,6 +427,21 @@ export const chargeWalletWithCode = async (
       console.error("Transaction failed: ", error);
       return { success: false, message: "حدث خطأ غير متوقع أثناء شحن الرصيد." };
   });
+};
+
+
+export const getWalletTransactions = async (userId: string): Promise<WalletTransaction[]> => {
+    if (!walletDatabaseInternal) return [];
+    const transactionsRef = query(ref(walletDatabaseInternal, `walletTransactions/${userId}`), orderByChild('date'));
+    const snapshot = await get(transactionsRef);
+    if (snapshot.exists()) {
+        const transactions: WalletTransaction[] = [];
+        snapshot.forEach((childSnapshot) => {
+            transactions.push({ id: childSnapshot.key!, ...childSnapshot.val() });
+        });
+        return transactions.reverse(); // Show most recent first
+    }
+    return [];
 };
 
 
@@ -459,9 +502,20 @@ export const getCompletedTripsForDriver = async (driverId: string): Promise<Trip
 
 
 export const endTrip = async (tripToEnd: Trip, earnings: number): Promise<void> => {
-  // This function is disabled
-  console.warn("endTrip is disabled.");
+  // First, record the wallet transaction for trip earnings.
+  if (earnings > 0 && walletDatabaseInternal) {
+    await addWalletTransaction(tripToEnd.driverId, {
+      type: 'trip_earning',
+      amount: earnings,
+      date: serverTimestamp(),
+      description: `أرباح من رحلة رقم ${tripToEnd.id}`,
+      tripId: tripToEnd.id,
+    });
+  }
+  
+  console.warn("endTrip is disabled, but transaction was logged.");
 };
+
 
 export const getTrips = async (): Promise<Trip[]> => {
   // This function is disabled
@@ -505,3 +559,5 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
     };
     await set(newRequestRef, requestData);
 };
+
+    

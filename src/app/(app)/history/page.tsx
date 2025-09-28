@@ -3,10 +3,10 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { AlertTriangle, CalendarDays, DollarSign, MapPin, Route, Users, Armchair, ListChecks, Loader2, Wallet, Gift } from 'lucide-react';
+import { AlertTriangle, CalendarDays, DollarSign, MapPin, Route, Users, Armchair, ListChecks, Loader2, Wallet, Gift, History as HistoryIcon, ArrowUpDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
@@ -18,9 +18,14 @@ import {
     type Trip,
     type UserProfile,
     getUserProfile,
-    chargeWalletWithCode
+    chargeWalletWithCode,
+    getWalletTransactions,
+    type WalletTransaction
 } from '@/lib/firebaseService';
 import { useRouter } from 'next/navigation';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 
 function CompletedTripCard({ trip }: { trip: Trip }) {
@@ -104,6 +109,65 @@ function CompletedTripCard({ trip }: { trip: Trip }) {
   );
 }
 
+const getTransactionTypeLabel = (type: WalletTransaction['type']) => {
+    switch (type) {
+        case 'charge': return 'شحن رصيد';
+        case 'trip_earning': return 'أرباح رحلة';
+        case 'trip_fee': return 'رسوم رحلة';
+        case 'system_adjustment': return 'تعديل من النظام';
+        default: return 'حركة غير معروفة';
+    }
+};
+
+function WalletTransactionsDialog({ isOpen, onOpenChange, transactions, isLoading }: { isOpen: boolean, onOpenChange: (open: boolean) => void, transactions: WalletTransaction[], isLoading: boolean }) {
+    return (
+        <Dialog open={isOpen} onOpenChange={onOpenChange}>
+            <DialogContent className="max-w-3xl">
+                <DialogHeader>
+                    <DialogTitle>حركات المحفظة</DialogTitle>
+                </DialogHeader>
+                <ScrollArea className="max-h-[60vh] pr-4">
+                    {isLoading ? (
+                        <div className="flex justify-center items-center h-32">
+                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                        </div>
+                    ) : transactions.length === 0 ? (
+                        <p className="text-muted-foreground text-center py-10">لا توجد حركات لعرضها.</p>
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>التاريخ والوقت</TableHead>
+                                    <TableHead>نوع الحركة</TableHead>
+                                    <TableHead className="text-center">المبلغ (د.أ)</TableHead>
+                                    <TableHead>تفاصيل</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {transactions.map((tx) => (
+                                    <TableRow key={tx.id}>
+                                        <TableCell className="text-xs">{format(new Date(tx.date), "Pp", { locale: ar })}</TableCell>
+                                        <TableCell>{getTransactionTypeLabel(tx.type)}</TableCell>
+                                        <TableCell className={`text-center font-mono ${tx.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                            {tx.amount >= 0 ? `+${tx.amount.toFixed(2)}` : tx.amount.toFixed(2)}
+                                        </TableCell>
+                                        <TableCell className="text-xs">{tx.description}</TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
+                </ScrollArea>
+                <DialogFooter>
+                    <DialogClose asChild>
+                        <Button type="button" variant="secondary">إغلاق</Button>
+                    </DialogClose>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 export default function HistoryPage() {
   const [allTrips, setAllTrips] = useState<Trip[]>([]);
   const [visibleTripsCount, setVisibleTripsCount] = useState(5);
@@ -114,6 +178,11 @@ export default function HistoryPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const { toast } = useToast();
   const router = useRouter();
+
+  // State for wallet transactions dialog
+  const [isTransactionsOpen, setIsTransactionsOpen] = useState(false);
+  const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([]);
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
 
   const fetchInitialData = useCallback(async (userId: string, initialLoad: boolean = true) => {
     if (initialLoad) setIsLoading(true);
@@ -172,6 +241,21 @@ export default function HistoryPage() {
     };
   }, [currentUserId]);
 
+  const handleOpenTransactions = async () => {
+    if (!currentUserId) return;
+    setIsTransactionsOpen(true);
+    setIsLoadingTransactions(true);
+    try {
+        const transactions = await getWalletTransactions(currentUserId);
+        setWalletTransactions(transactions);
+    } catch (error) {
+        console.error("Error fetching wallet transactions:", error);
+        toast({ title: "خطأ في جلب حركات المحفظة", variant: "destructive" });
+    } finally {
+        setIsLoadingTransactions(false);
+    }
+  };
+
 
   const handleChargeWallet = async () => {
     if (!chargeCodeInput.trim()) {
@@ -214,6 +298,12 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-6">
+      <WalletTransactionsDialog 
+        isOpen={isTransactionsOpen} 
+        onOpenChange={setIsTransactionsOpen}
+        transactions={walletTransactions}
+        isLoading={isLoadingTransactions}
+      />
       <div className="flex items-center">
         <h1 className="text-3xl font-bold h-underline flex items-center">
           <ListChecks className="me-3 h-8 w-8 text-primary" />
@@ -252,6 +342,12 @@ export default function HistoryPage() {
             </p>
           </div>
         </CardContent>
+         <CardFooter>
+            <Button variant="outline" className="w-full" onClick={handleOpenTransactions}>
+                <HistoryIcon className="ms-2 h-4 w-4" />
+                عرض حركات المحفظة
+            </Button>
+        </CardFooter>
       </Card>
 
 
@@ -279,3 +375,5 @@ export default function HistoryPage() {
     </div>
   );
 }
+
+    
