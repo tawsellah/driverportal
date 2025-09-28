@@ -187,9 +187,15 @@ export default function HistoryPage() {
   const fetchInitialData = useCallback(async (userId: string, initialLoad: boolean = true) => {
     if (initialLoad) setIsLoading(true);
     try {
-        // Fetch profile first
-        const profile = await getUserProfile(userId);
-        setUserProfile(profile);
+        // Fetch profile first, handle potential errors (e.g. wallet not existing yet)
+        try {
+            const profile = await getUserProfile(userId);
+            setUserProfile(profile);
+        } catch(profileError) {
+            console.error("Could not fetch user profile, maybe wallet doesn't exist yet:", profileError);
+            // Don't crash, allow user to try and charge wallet
+            setUserProfile(null); 
+        }
 
         // Then, fetch trips, handling potential errors gracefully
         try {
@@ -198,21 +204,14 @@ export default function HistoryPage() {
         } catch (tripError) {
             console.warn("Could not fetch completed trips, registry might be empty:", tripError);
             setAllTrips([]); // Set to empty array on error
-            toast({
-                title: "ملاحظة",
-                description: "لم يتم العثور على سجل رحلات مكتملة.",
-                variant: "default"
-            });
         }
     } catch (error) {
         console.error("Error fetching initial page data:", error);
-        if (initialLoad) {
-            toast({ 
-                title: "خطأ في تحميل البيانات", 
-                description: "فشل تحميل بيانات الملف الشخصي. قد تحتاج لشحن رصيدك.", 
-                variant: "destructive" 
-            });
-        }
+        toast({ 
+            title: "خطأ في تحميل البيانات", 
+            description: "فشل تحميل بعض البيانات. قد تحتاج لشحن رصيدك.", 
+            variant: "destructive" 
+        });
     } finally {
         if (initialLoad) setIsLoading(false);
     }
@@ -268,13 +267,11 @@ export default function HistoryPage() {
     } catch (error: any) {
         console.error("Error fetching wallet transactions:", error);
         setWalletTransactions([]);
-        if (!error.message.includes("does not exist")) {
-             toast({ 
-                title: "خطأ في جلب حركات المحفظة", 
-                description: "قد لا يكون لديك أي حركات لعرضها. حاول مرة أخرى لاحقًا.",
-                variant: "destructive" 
-            });
-        }
+        toast({ 
+            title: "خطأ في جلب حركات المحفظة", 
+            description: "قد لا يكون لديك أي حركات لعرضها. حاول مرة أخرى لاحقًا.",
+            variant: "destructive" 
+        });
     } finally {
         setIsLoadingTransactions(false);
     }

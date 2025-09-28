@@ -390,7 +390,7 @@ export const chargeWalletWithCode = async (
     if (codeData.status !== 'unused') {
       return { success: false, message: "كود الشحن تم استخدامه مسبقاً." };
     }
-
+    
     const amountToAdd = codeData.amount;
     if (!amountToAdd || typeof amountToAdd !== 'number' || amountToAdd <= 0) {
         return { success: false, message: "كود الشحن يحتوي على قيمة غير صالحة." };
@@ -401,7 +401,6 @@ export const chargeWalletWithCode = async (
         if (walletData) {
             walletData.walletBalance = (walletData.walletBalance || 0) + amountToAdd;
         } else {
-            // If wallet doesn't exist, create it with the initial balance.
             walletData = { walletBalance: amountToAdd, createdAt: serverTimestamp() };
         }
         walletData.updatedAt = serverTimestamp();
@@ -411,7 +410,7 @@ export const chargeWalletWithCode = async (
     if (transactionResult.committed && transactionResult.snapshot.exists()) {
         const newBalance = transactionResult.snapshot.val().walletBalance;
 
-        // 3. Log the successful transaction. The admin/backend is responsible for marking the code as 'used'.
+        // 3. Log the successful transaction.
         await addWalletTransaction(userId, {
             type: 'charge',
             amount: amountToAdd,
@@ -419,15 +418,9 @@ export const chargeWalletWithCode = async (
             description: `تم شحن الرصيد بنجاح باستخدام الكود: ${chargeCode}`
         });
         
-        // This part is crucial: The backend/admin needs to listen to `walletTransactions`
-        // and when a 'charge' type transaction appears, it should atomically update 
-        // the `chargeCodes/{chargeCode}/status` to 'used'.
-        // For now, we simulate success from the client.
-        
-        // Since we can't write to `chargeCodes`, we have to assume this backend process works.
-        // We will optimistically update the code status in a non-atomic way for client-side feedback if needed,
-        // but this is not secure. The secure way is the backend process.
-        // For this app, we will NOT attempt to write to `chargeCodes`.
+        // IMPORTANT: The backend/admin is responsible for marking the code as 'used'
+        // after seeing the walletTransaction log. We do not do it from the client
+        // to respect the security rules.
 
         return { 
           success: true, 
@@ -440,7 +433,6 @@ export const chargeWalletWithCode = async (
 
   } catch (error: any) {
       console.error("Charge wallet failed: ", error);
-      // This will catch permission errors from the initial `get` if rules are wrong
       if (error.code === 'PERMISSION_DENIED') {
         return { success: false, message: "خطأ في الصلاحيات. لا يمكن التحقق من كود الشحن." };
       }
@@ -469,11 +461,6 @@ export const getWalletTransactions = async (userId: string): Promise<WalletTrans
             return [];
         }
         console.error("Error fetching wallet transactions:", error);
-        toast({
-            title: "خطأ في جلب حركات المحفظة",
-            description: "إذا استمرت المشكلة، تأكد من إضافة فهرس (.indexOn) لحقل 'date' في قواعد الأمان الخاصة بك.",
-            variant: "destructive",
-        });
         throw error;
     }
 };
@@ -750,6 +737,7 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
 };
 
     
+
 
 
 
