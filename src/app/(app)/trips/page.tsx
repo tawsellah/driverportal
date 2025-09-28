@@ -465,44 +465,6 @@ export default function TripsPage() {
 
   return (
     <div>
-      <Card className="mb-6">
-          <CardContent className="p-4">
-              {isLoadingProfile ? (
-                  <div className="flex items-center justify-between">
-                      <div className="space-y-2">
-                          <Skeleton className="h-6 w-32" />
-                          <Skeleton className="h-4 w-24" />
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <Skeleton className="h-8 w-16" />
-                        <Skeleton className="h-8 w-16" />
-                      </div>
-                  </div>
-              ) : userProfile ? (
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                      <div>
-                          <h2 className="text-xl font-bold text-foreground">{userProfile.fullName}</h2>
-                          <p className="text-sm text-muted-foreground flex items-center gap-2">
-                            <Phone className="h-4 w-4" />
-                            {userProfile.phone}
-                          </p>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm">
-                          <div className="flex items-center gap-1 text-yellow-500">
-                              <Star className="h-5 w-5 fill-current" />
-                              <span className="font-bold">{(userProfile.rating || 0).toFixed(1)}</span>
-                          </div>
-                          <div className="flex items-center gap-1 text-muted-foreground">
-                              <Briefcase className="h-5 w-5" />
-                              <span className="font-bold">{userProfile.tripsCount || 0} رحلة</span>
-                          </div>
-                      </div>
-                  </div>
-              ) : null}
-          </CardContent>
-      </Card>
-
-
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl md:text-3xl font-bold h-underline">رحلاتك القادمة والجارية</h1>
         {canCreateTrip ? (
@@ -594,5 +556,7 @@ export default function TripsPage() {
     </div>
   );
 }
+
+    
 
     
