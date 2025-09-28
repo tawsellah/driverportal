@@ -277,7 +277,7 @@ export default function ProfilePage() {
                 render={({ field }) => (
                   <Label htmlFor="paymentCash"
                     className={cn(
-                      "flex flex-col items-center justify-center gap-2 rounded-lg border-2 p-4 cursor-pointer transition-colors hover:bg-accent/10",
+                      "flex flex-col items-center justify-center gap-2 rounded-lg border-2 p-4 transition-colors hover:bg-accent/10",
                       field.value ? "border-primary bg-primary/5" : "border-muted",
                       isEditing ? "cursor-pointer" : "cursor-not-allowed opacity-70"
                     )}
@@ -300,7 +300,7 @@ export default function ProfilePage() {
                 render={({ field }) => (
                   <Label htmlFor="paymentClick"
                     className={cn(
-                      "flex flex-col items-center justify-center gap-2 rounded-lg border-2 p-4 cursor-pointer transition-colors hover:bg-accent/10",
+                      "flex flex-col items-center justify-center gap-2 rounded-lg border-2 p-4 transition-colors hover:bg-accent/10",
                       field.value ? "border-primary bg-primary/5" : "border-muted",
                       isEditing ? "cursor-pointer" : "cursor-not-allowed opacity-70"
                     )}
