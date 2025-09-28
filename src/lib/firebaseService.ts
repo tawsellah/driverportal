@@ -115,7 +115,7 @@ export interface WaitingListDriverProfile {
 
 export interface Trip {
   id: string; 
-  driverId: string; 
+  driverId: string; _
   startPoint: string; 
   stops?: string[]; 
   destination: string; 
@@ -645,12 +645,28 @@ export const getCompletedTripsForDriver = async (driverId: string): Promise<Trip
 };
 
 export const getAllTripsForDriver = async (driverId: string): Promise<Trip[]> => {
+    if (!tripsDatabaseInternal) return [];
+    
+    // Fetch upcoming and ongoing trips
     const upcomingAndOngoing = await getUpcomingAndOngoingTripsForDriver(driverId);
-    const completedAndCancelled = await getCompletedTripsForDriver(driverId);
+    
+    // Fetch finished trips (completed and cancelled)
+    const finishedTripsRef = ref(tripsDatabaseInternal, FINISHED_TRIPS_PATH);
+    const finishedSnapshot = await get(finishedTripsRef);
+    const completedAndCancelled: Trip[] = [];
+    if (finishedSnapshot.exists()) {
+        const allFinishedTrips = finishedSnapshot.val();
+        for (const tripId in allFinishedTrips) {
+            const trip = allFinishedTrips[tripId];
+            if (trip.driverId === driverId) {
+                completedAndCancelled.push(trip);
+            }
+        }
+    }
     
     const allTrips = [...upcomingAndOngoing, ...completedAndCancelled];
     
-    // Sort all trips by date descending (newest first)
+    // Sort all trips by creation date descending (newest first)
     return allTrips.sort((a, b) => {
         const dateA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : (typeof a.createdAt === 'number' ? a.createdAt : new Date(a.dateTime).getTime());
         const dateB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : (typeof b.createdAt === 'number' ? b.createdAt : new Date(b.dateTime).getTime());
@@ -782,19 +798,3 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
     };
     await set(newRequestRef, requestData);
 };
-
-    
-
-
-
-
-
-
-
-
-    
-
-
-
-
-
