@@ -391,16 +391,15 @@ export const chargeWalletWithCode = async (
   const topUpCodesRef = ref(codesDatabaseInternal, 'topUpCodes');
 
   try {
-    const snapshot = await get(topUpCodesRef);
-    if (!snapshot.exists()) {
+    const allCodesSnapshot = await get(topUpCodesRef);
+    if (!allCodesSnapshot.exists()) {
       return { success: false, message: "لا توجد أكواد شحن متاحة." };
     }
 
-    const allCodes = snapshot.val();
+    const allCodes = allCodesSnapshot.val();
     let codeId: string | null = null;
     let codeData: TopUpCode | null = null;
 
-    // Find the code by iterating through the fetched data
     for (const id in allCodes) {
       if (allCodes[id].code === chargeCode) {
         codeId = id;
@@ -422,18 +421,14 @@ export const chargeWalletWithCode = async (
       return { success: false, message: "كود الشحن يحتوي على قيمة غير صالحة." };
     }
 
-    // Prepare references for update
     const codeToUpdateRef = ref(codesDatabaseInternal, `topUpCodes/${codeId}`);
-    const userWalletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
-
-    // Update code status
     await update(codeToUpdateRef, {
         status: 'used',
         driverId: userId,
         usedAt: serverTimestamp()
     });
 
-    // Run transaction on wallet to ensure atomicity
+    const userWalletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
     const walletTransactionResult = await runTransaction(userWalletRef, (walletData) => {
         if (walletData) {
             walletData.walletBalance = (walletData.walletBalance || 0) + amountToAdd;
@@ -447,7 +442,6 @@ export const chargeWalletWithCode = async (
     if (walletTransactionResult.committed && walletTransactionResult.snapshot.exists()) {
         const newBalance = walletTransactionResult.snapshot.val().walletBalance;
         
-        // Log the transaction
         await addWalletTransaction(userId, {
             type: 'charge',
             amount: amountToAdd,
@@ -461,7 +455,6 @@ export const chargeWalletWithCode = async (
             newBalance
         };
     } else {
-        // If wallet update fails, try to revert the code status change
         await update(codeToUpdateRef, { status: 'unused', driverId: '', usedAt: null });
         throw new Error("فشلت عملية تحديث رصيد المحفظة. تم التراجع عن استخدام الكود.");
     }
@@ -579,7 +572,10 @@ export const getTripById = async (tripId: string): Promise<Trip | null> => {
 };
 
 export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Promise<Trip[]> => {
-  if (!tripsDatabaseInternal) return [];
+  if (!tripsDatabaseInternal) {
+    console.error("Trips database is not initialized.");
+    throw new Error("Trips database service is not available.");
+  }
   try {
     const tripsRef = query(ref(tripsDatabaseInternal, CURRENT_TRIPS_PATH), orderByChild('driverId'), equalTo(driverId));
     const snapshot = await get(tripsRef);
@@ -598,10 +594,12 @@ export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Pro
           return new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime();
       });
     }
-  } catch (e) {
-      console.warn("Could not get upcoming/ongoing trips, registry might be empty.", e);
+    return []; // Return empty array if no trips found, this is not an error.
+  } catch (error) {
+      console.error("Error fetching upcoming/ongoing trips from Firebase:", error);
+      // Re-throw the error so the calling component can handle it
+      throw new Error(`فشل في جلب الرحلات: ${(error as Error).message}`);
   }
-  return [];
 };
 
 
@@ -778,3 +776,4 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
 
 
     
+

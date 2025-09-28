@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useEffect, useState, useCallback } from 'react';
@@ -6,7 +7,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { Plus, Edit3, Users, Route, MapPin, CalendarDays, Clock, Armchair, DollarSign, Loader2, AlertTriangle, Ban, CheckCircle, Play, Wallet, Star, Briefcase, Phone } from 'lucide-react';
+import { Plus, Edit3, Users, Route, MapPin, CalendarDays, Clock, Armchair, DollarSign, Loader2, AlertTriangle, Ban, CheckCircle, Play, Wallet, Star, Briefcase, Phone, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -166,6 +167,12 @@ function TripCard({
           <MapPin className="ms-2 h-4 w-4 text-muted-foreground" />
           مكان اللقاء: {trip.meetingPoint}
         </div>
+         {trip.notes && (
+          <div className="flex items-start">
+            <FileText className="ms-2 mt-1 h-4 w-4 text-muted-foreground" />
+            <span>ملاحظات: {trip.notes}</span>
+          </div>
+        )}
       </CardContent>
       <CardFooter className="flex justify-end space-x-2 space-x-reverse">
         {trip.status === 'upcoming' && canStartTrip && (
@@ -300,12 +307,12 @@ export default function TripsPage() {
                 }
             }
         } catch (error) {
-            console.warn("Could not fetch upcoming trips, registry might be empty:", error);
+            console.error("Could not fetch upcoming trips:", error);
             tripsToUpdateLocally = []; // Set to empty array on error
              toast({
-                title: "ملاحظة",
-                description: "لم يتم العثور على سجل رحلات قادمة.",
-                variant: "default"
+                title: "خطأ في جلب الرحلات",
+                description: (error as Error).message || "فشل تحميل بيانات الرحلات. قد تكون هناك مشكلة في الاتصال أو صلاحيات الوصول.",
+                variant: "destructive"
             });
         } finally {
             setTrips(tripsToUpdateLocally);
