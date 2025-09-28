@@ -573,14 +573,13 @@ export const getTripById = async (tripId: string): Promise<Trip | null> => {
 
 export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Promise<Trip[]> => {
   if (!tripsDatabaseInternal) {
-    console.error("Trips database is not initialized.");
-    throw new Error("Trips database service is not available.");
+    throw new Error("خدمة قاعدة بيانات الرحلات غير متاحة.");
   }
   try {
     const tripsRef = query(ref(tripsDatabaseInternal, CURRENT_TRIPS_PATH), orderByChild('driverId'), equalTo(driverId));
     const snapshot = await get(tripsRef);
+    const trips: Trip[] = [];
     if (snapshot.exists()) {
-      const trips: Trip[] = [];
       snapshot.forEach((childSnapshot) => {
         const trip = childSnapshot.val();
         if (trip.status === 'upcoming' || trip.status === 'ongoing') {
@@ -594,10 +593,9 @@ export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Pro
           return new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime();
       });
     }
-    return []; // Return empty array if no trips found, this is not an error.
+    return trips;
   } catch (error) {
       console.error("Error fetching upcoming/ongoing trips from Firebase:", error);
-      // Re-throw the error so the calling component can handle it
       throw new Error(`فشل في جلب الرحلات: ${(error as Error).message}`);
   }
 };
@@ -776,4 +774,5 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
 
 
     
+
 
