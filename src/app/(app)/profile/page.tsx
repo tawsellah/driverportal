@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { User, Phone, Star, Briefcase, Edit3, Save, Loader2, LogOut, KeyRound } from 'lucide-react';
+import { User, Phone, Star, Briefcase, Edit3, Save, Loader2, LogOut, KeyRound, Banknote, Smartphone } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
@@ -25,6 +25,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ChangePasswordDialog } from '@/components/profile/change-password-dialog';
 import { IconInput } from '@/components/shared/icon-input';
 import { useUser } from '@/context/UserContext';
+import { cn } from '@/lib/utils';
 
 
 const profileSchema = z.object({
@@ -269,52 +270,69 @@ export default function ProfilePage() {
             </div>
             
             <h3 className="text-lg font-semibold border-b pb-2 mt-6 mb-3">طرق الدفع المقبولة</h3>
-            <div className="space-y-3">
-              <div className="flex items-center space-x-2 space-x-reverse">
-                <Controller
-                  name="paymentMethods.cash"
-                  control={control}
-                  render={({ field }) => (
+            <div className="grid grid-cols-2 gap-3">
+              <Controller
+                name="paymentMethods.cash"
+                control={control}
+                render={({ field }) => (
+                  <Label htmlFor="paymentCash"
+                    className={cn(
+                      "flex flex-col items-center justify-center gap-2 rounded-lg border-2 p-4 cursor-pointer transition-colors hover:bg-accent/10",
+                      field.value ? "border-primary bg-primary/5" : "border-muted",
+                      isEditing ? "cursor-pointer" : "cursor-not-allowed opacity-70"
+                    )}
+                  >
                     <Checkbox
                       id="paymentCash"
                       checked={field.value || false}
                       onCheckedChange={field.onChange}
                       disabled={!isEditing}
+                      className="hidden"
                     />
-                  )}
-                />
-                <Label htmlFor="paymentCash" className="font-normal cursor-pointer">الدفع النقدي (كاش)</Label>
-              </div>
-              <div className="flex items-center space-x-2 space-x-reverse">
-                <Controller
-                  name="paymentMethods.click"
-                  control={control}
-                  render={({ field }) => (
-                    <Checkbox
+                    <Banknote className={cn("h-8 w-8", field.value ? "text-primary" : "text-muted-foreground")} />
+                    <span className="font-semibold">الدفع النقدي (كاش)</span>
+                  </Label>
+                )}
+              />
+              <Controller
+                name="paymentMethods.click"
+                control={control}
+                render={({ field }) => (
+                  <Label htmlFor="paymentClick"
+                    className={cn(
+                      "flex flex-col items-center justify-center gap-2 rounded-lg border-2 p-4 cursor-pointer transition-colors hover:bg-accent/10",
+                      field.value ? "border-primary bg-primary/5" : "border-muted",
+                      isEditing ? "cursor-pointer" : "cursor-not-allowed opacity-70"
+                    )}
+                  >
+                     <Checkbox
                       id="paymentClick"
                       checked={field.value || false}
                       onCheckedChange={field.onChange}
                       disabled={!isEditing}
+                      className="hidden"
                     />
-                  )}
-                />
-                <Label htmlFor="paymentClick" className="font-normal cursor-pointer">CliQ (كليك)</Label>
-              </div>
-              {paymentMethodsWatched?.click && (
-                <div className="ps-7 pt-2">
-                  <Label htmlFor="clickCode">معرّف CliQ الخاص بك</Label>
-                  <Input 
-                    id="clickCode" 
-                    {...register('paymentMethods.clickCode')} 
-                    disabled={!isEditing} 
-                    placeholder="اسمك أو رقم هاتفك على CliQ" 
-                    className="mt-1"
-                  />
-                   {errors.paymentMethods?.clickCode && <p className="mt-1 text-sm text-destructive">{errors.paymentMethods.clickCode.message}</p>}
-                </div>
-              )}
+                    <Smartphone className={cn("h-8 w-8", field.value ? "text-primary" : "text-muted-foreground")} />
+                    <span className="font-semibold">CliQ (كليك)</span>
+                  </Label>
+                )}
+              />
             </div>
 
+            {paymentMethodsWatched?.click && (
+              <div className="pt-2">
+                <Label htmlFor="clickCode">معرّف CliQ الخاص بك</Label>
+                <Input 
+                  id="clickCode" 
+                  {...register('paymentMethods.clickCode')} 
+                  disabled={!isEditing} 
+                  placeholder="اسمك أو رقم هاتفك على CliQ" 
+                  className="mt-1"
+                />
+                 {errors.paymentMethods?.clickCode && <p className="mt-1 text-sm text-destructive">{errors.paymentMethods.clickCode.message}</p>}
+              </div>
+            )}
+            
             {isEditing && (
               <Button type="submit" className="w-full mt-6" disabled={isLoading}>
                 {isLoading ? <Loader2 className="animate-spin" /> : <><Save className="ms-2 h-4 w-4" /> حفظ التغييرات</>}
