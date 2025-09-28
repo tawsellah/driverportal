@@ -388,60 +388,69 @@ export const chargeWalletWithCode = async (
   }
 
   const chargeCode = chargeCodeInput.trim().toUpperCase();
+  // Fetch all codes instead of querying
   const topUpCodesRef = ref(codesDatabaseInternal, 'topUpCodes');
 
   try {
     const allCodesSnapshot = await get(topUpCodesRef);
     if (!allCodesSnapshot.exists()) {
-      return { success: false, message: "لا توجد أكواد شحن متاحة." };
+      return { success: false, message: "لا توجد أكواد شحن متاحة في النظام." };
     }
 
     const allCodes = allCodesSnapshot.val();
-    let codeId: string | null = null;
-    let codeData: TopUpCode | null = null;
+    let foundCodeId: string | null = null;
+    let foundCodeData: TopUpCode | null = null;
 
-    for (const id in allCodes) {
-      if (allCodes[id].code === chargeCode) {
-        codeId = id;
-        codeData = allCodes[id];
+    // Manually iterate and find the code on the client-side
+    for (const codeId in allCodes) {
+      if (allCodes[codeId].code === chargeCode) {
+        foundCodeId = codeId;
+        foundCodeData = allCodes[codeId];
         break;
       }
     }
 
-    if (!codeId || !codeData) {
+    if (!foundCodeId || !foundCodeData) {
       return { success: false, message: "كود الشحن غير صحيح." };
     }
 
-    if (codeData.status !== 'unused') {
+    if (foundCodeData.status !== 'unused') {
       return { success: false, message: "هذا الكود تم استخدامه مسبقاً." };
     }
-
-    const amountToAdd = codeData.amount;
+    
+    const amountToAdd = foundCodeData.amount;
     if (!amountToAdd || typeof amountToAdd !== 'number' || amountToAdd <= 0) {
-      return { success: false, message: "كود الشحن يحتوي على قيمة غير صالحة." };
+        return { success: false, message: "كود الشحن يحتوي على قيمة غير صالحة." };
     }
-
-    const codeToUpdateRef = ref(codesDatabaseInternal, `topUpCodes/${codeId}`);
-    await update(codeToUpdateRef, {
-        status: 'used',
-        driverId: userId,
-        usedAt: serverTimestamp()
-    });
-
+    
+    const codeToUpdateRef = ref(codesDatabaseInternal, `topUpCodes/${foundCodeId}`);
+    
     const userWalletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
+
+    // Use a transaction for the wallet balance
     const walletTransactionResult = await runTransaction(userWalletRef, (walletData) => {
         if (walletData) {
             walletData.walletBalance = (walletData.walletBalance || 0) + amountToAdd;
         } else {
+            // If the user has no wallet, create one
             walletData = { walletBalance: amountToAdd, createdAt: serverTimestamp() };
         }
         walletData.updatedAt = serverTimestamp();
         return walletData;
     });
 
+    // If the wallet transaction was successful, update the code status
     if (walletTransactionResult.committed && walletTransactionResult.snapshot.exists()) {
         const newBalance = walletTransactionResult.snapshot.val().walletBalance;
+
+        // Now update the code status permanently
+        await update(codeToUpdateRef, {
+            status: 'used',
+            driverId: userId,
+            usedAt: serverTimestamp()
+        });
         
+        // Add a record of the transaction in the wallet DB
         await addWalletTransaction(userId, {
             type: 'charge',
             amount: amountToAdd,
@@ -455,8 +464,8 @@ export const chargeWalletWithCode = async (
             newBalance
         };
     } else {
-        await update(codeToUpdateRef, { status: 'unused', driverId: '', usedAt: null });
-        throw new Error("فشلت عملية تحديث رصيد المحفظة. تم التراجع عن استخدام الكود.");
+        // If wallet transaction failed, do not update the code and throw an error
+        throw new Error("فشلت عملية تحديث رصيد المحفظة.");
     }
 
   } catch (error: any) {
@@ -576,24 +585,25 @@ export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Pro
     throw new Error("خدمة قاعدة بيانات الرحلات غير متاحة.");
   }
   try {
-    const tripsRef = query(ref(tripsDatabaseInternal, CURRENT_TRIPS_PATH), orderByChild('driverId'), equalTo(driverId));
-    const snapshot = await get(tripsRef);
+    const allTripsRef = ref(tripsDatabaseInternal, CURRENT_TRIPS_PATH);
+    const snapshot = await get(allTripsRef);
     const trips: Trip[] = [];
     if (snapshot.exists()) {
-      snapshot.forEach((childSnapshot) => {
-        const trip = childSnapshot.val();
-        if (trip.status === 'upcoming' || trip.status === 'ongoing') {
+      const allTrips = snapshot.val();
+      for (const tripId in allTrips) {
+        const trip = allTrips[tripId] as Trip;
+        // Filter on the client-side
+        if (trip.driverId === driverId && (trip.status === 'upcoming' || trip.status === 'ongoing')) {
           trips.push(trip);
         }
-      });
-      // Sort by date: ongoing first, then upcoming sorted by date
-      return trips.sort((a, b) => {
-          if (a.status === 'ongoing' && b.status !== 'ongoing') return -1;
-          if (a.status !== 'ongoing' && b.status === 'ongoing') return 1;
-          return new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime();
-      });
+      }
     }
-    return trips;
+    // Sort by date: ongoing first, then upcoming sorted by date
+    return trips.sort((a, b) => {
+        if (a.status === 'ongoing' && b.status !== 'ongoing') return -1;
+        if (a.status !== 'ongoing' && b.status === 'ongoing') return 1;
+        return new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime();
+    });
   } catch (error) {
       console.error("Error fetching upcoming/ongoing trips from Firebase:", error);
       throw new Error(`فشل في جلب الرحلات: ${(error as Error).message}`);
@@ -774,5 +784,6 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
 
 
     
+
 
 
