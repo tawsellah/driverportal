@@ -2,12 +2,11 @@
 import { NextResponse } from 'next/server';
 import ImageKit from 'imagekit';
 
-// WARNING: Keys are cleared to disconnect from the service.
-// This is NOT recommended for production without a proper config management system.
+// WARNING: Keys are provided for the new connection.
 const imagekit = new ImageKit({
-  publicKey: "",
-  privateKey: "",
-  urlEndpoint: ""
+  publicKey: "public_IfRvA+ieL0CZzBuuO9i9cFceLn8=",
+  privateKey: "private_M639+xksOgWoN42TwbWpr10mkvc=",
+  urlEndpoint: "https://ik.imagekit.io/Tawsellah/"
 });
 
 export async function GET() {

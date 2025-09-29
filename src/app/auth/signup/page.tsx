@@ -56,11 +56,40 @@ const steps: { title: string; fields: FieldName<SignUpFormValues>[] }[] = [
     { title: 'بيانات المركبة', fields: ['vehicleType', 'otherVehicleType', 'year', 'color', 'plateNumber', 'vehiclePhoto'] }
 ];
 
-async function uploadFileToImageKitHelper(file: File | undefined | null): Promise<string | null> {
+async function uploadFileToImageKit(file: File | undefined | null): Promise<string | null> {
   if (!file) return null;
-  // This is a mock function since imagekit is disconnected
-  console.log("Mock Upload: Returning placeholder for", file.name);
-  return `https://placehold.co/400x400.png?text=${encodeURIComponent(file.name.substring(0,15))}`;
+  try {
+    const authResponse = await fetch('/api/imagekit-auth');
+    if (!authResponse.ok) {
+      throw new Error('Failed to get ImageKit auth params');
+    }
+    const authParams = await authResponse.json();
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('fileName', file.name);
+    formData.append('publicKey', "public_IfRvA+ieL0CZzBuuO9i9cFceLn8=");
+    formData.append('signature', authParams.signature);
+    formData.append('expire', authParams.expire);
+    formData.append('token', authParams.token);
+
+    const uploadResponse = await fetch('https://upload.imagekit.io/api/v1/files/upload', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!uploadResponse.ok) {
+      const errorData = await uploadResponse.json();
+      console.error('ImageKit Upload Error:', errorData);
+      throw new Error(errorData.message || 'ImageKit upload failed');
+    }
+
+    const uploadResult = await uploadResponse.json();
+    return uploadResult.url;
+  } catch (error) {
+    console.error('Error uploading to ImageKit:', error);
+    return null;
+  }
 }
 
 const FileInput = ({
@@ -117,9 +146,9 @@ export default function SignUpPage() {
         }
 
         const [idPhotoUrl, licensePhotoUrl, vehiclePhotoUrl] = await Promise.all([
-            uploadFileToImageKitHelper(data.idPhoto?.[0]),
-            uploadFileToImageKitHelper(data.licensePhoto?.[0]),
-            uploadFileToImageKitHelper(data.vehiclePhoto?.[0]),
+            uploadFileToImageKit(data.idPhoto?.[0]),
+            uploadFileToImageKit(data.licensePhoto?.[0]),
+            uploadFileToImageKit(data.vehiclePhoto?.[0]),
         ]);
 
         const profileData: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt' | 'status'> = {
@@ -287,14 +316,14 @@ export default function SignUpPage() {
         )}
 
 
-        <div className="mt-8 flex justify-between">
+        <div className="mt-8 flex justify-end gap-2">
           {currentStep > 0 && (
             <Button type="button" variant="outline" onClick={handlePrevStep} className="px-6">
               السابق
             </Button>
           )}
           {currentStep < steps.length - 1 && (
-            <Button type="button" onClick={handleNextStep} className="px-6 ms-auto">
+            <Button type="button" onClick={handleNextStep} className="px-6">
               التالي
             </Button>
           )}

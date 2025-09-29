@@ -50,7 +50,7 @@ async function uploadFileToImageKit(file: File): Promise<string | null> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('fileName', file.name);
-    formData.append('publicKey', process.env.NEXT_PUBLIC_IMAGEKIT_PUBLIC_KEY || "public_IfRvA+ieL0CZzBuuO9i9cFceLn8=");
+    formData.append('publicKey', "public_IfRvA+ieL0CZzBuuO9i9cFceLn8=");
     formData.append('signature', authParams.signature);
     formData.append('expire', authParams.expire);
     formData.append('token', authParams.token);
