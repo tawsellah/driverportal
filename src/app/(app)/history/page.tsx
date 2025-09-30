@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { AlertTriangle, CalendarDays, DollarSign, MapPin, Route, Users, Armchair, ListChecks, Loader2, Wallet, Gift, History as HistoryIcon, ArrowUpDown } from 'lucide-react';
+import { AlertTriangle, CalendarDays, DollarSign, MapPin, Route, Users, Armchair, ListChecks, Loader2, Wallet, Gift, History as HistoryIcon, ArrowUpDown, Hash } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
@@ -67,6 +67,12 @@ function CompletedTripCard({ trip }: { trip: Trip }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 text-sm pb-4">
+        {trip.tripReferenceNumber && (
+            <div className="flex items-center text-xs text-muted-foreground">
+                <Hash className="ms-2 h-3 w-3" />
+                رقم الرحلة: {trip.tripReferenceNumber}
+            </div>
+        )}
         {stopNames && (
           <div className="flex items-center">
             <MapPin className="ms-2 h-4 w-4 text-muted-foreground" />

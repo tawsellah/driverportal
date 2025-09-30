@@ -115,7 +115,8 @@ export interface WaitingListDriverProfile {
 
 export interface Trip {
   id: string; 
-  driverId: string; _
+  driverId: string; 
+  tripReferenceNumber: number;
   startPoint: string; 
   stops?: string[]; 
   destination: string; 
@@ -132,7 +133,7 @@ export interface Trip {
   selectedSeats: SeatID[];
 }
 
-export type NewTripData = Omit<Trip, 'id' | 'status' | 'earnings' | 'driverId' | 'createdAt' | 'updatedAt' | 'selectedSeats'>;
+export type NewTripData = Omit<Trip, 'id' | 'status' | 'earnings' | 'driverId' | 'createdAt' | 'updatedAt' | 'selectedSeats' | 'tripReferenceNumber'>;
 
 export interface SupportRequestData {
   userId: string;
@@ -496,10 +497,27 @@ const CURRENT_TRIPS_PATH = 'currentTrips';
 const FINISHED_TRIPS_PATH = 'finishedTrips';
 const STOP_STATIONS_PATH = 'stopstations';
 const SUPPORT_REQUESTS_PATH = 'supportRequests';
+const TRIP_COUNTERS_PATH = 'tripCounters';
 
 
 export const addTrip = async (driverId: string, tripData: NewTripData): Promise<Trip> => {
   if (!tripsDatabaseInternal) throw new Error("Trips database is not initialized.");
+
+  // 1. Get the new trip reference number using a transaction
+  const counterRef = ref(tripsDatabaseInternal, `${TRIP_COUNTERS_PATH}/lastTripNumber`);
+  const transactionResult = await runTransaction(counterRef, (currentValue) => {
+    if (currentValue === null) {
+      return 1000; // Initialize if it doesn't exist
+    }
+    return currentValue + 1;
+  });
+
+  if (!transactionResult.committed) {
+    throw new Error("Failed to generate a new trip reference number.");
+  }
+  const newTripReferenceNumber = transactionResult.snapshot.val();
+
+  // 2. Create the new trip with the reference number
   const newTripRef = push(ref(tripsDatabaseInternal, CURRENT_TRIPS_PATH));
   const newTripId = newTripRef.key;
   if (!newTripId) throw new Error("Could not create new trip ID.");
@@ -507,6 +525,7 @@ export const addTrip = async (driverId: string, tripData: NewTripData): Promise<
   const fullTripData: Trip = {
     id: newTripId,
     driverId: driverId,
+    tripReferenceNumber: newTripReferenceNumber,
     ...tripData,
     status: 'upcoming',
     createdAt: serverTimestamp(),

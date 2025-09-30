@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { Plus, Edit3, Users, Route, MapPin, CalendarDays, Clock, Armchair, DollarSign, Loader2, AlertTriangle, Ban, CheckCircle, Play, Wallet, FileText } from 'lucide-react';
+import { Plus, Edit3, Users, Route, MapPin, CalendarDays, Clock, Armchair, DollarSign, Loader2, AlertTriangle, Ban, CheckCircle, Play, Wallet, FileText, Hash } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -130,6 +130,12 @@ function TripCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
+        {trip.tripReferenceNumber && (
+          <div className="flex items-center text-xs text-muted-foreground">
+            <Hash className="ms-2 h-3 w-3" />
+            رقم الرحلة: {trip.tripReferenceNumber}
+          </div>
+        )}
         {stopNames && (
           <div className="flex items-center">
             <MapPin className="ms-2 h-4 w-4 text-muted-foreground" />
@@ -567,5 +573,6 @@ export default function TripsPage() {
     
 
     
+
 
 
