@@ -18,7 +18,6 @@ import { useRouter } from 'next/navigation';
 import { 
     updateUserProfile, 
     type UserProfile,
-    getUserProfile,
 } from '@/lib/firebaseService'; 
 import { setAuthStatus } from '@/lib/storage';
 import { Checkbox } from "@/components/ui/checkbox";
@@ -50,12 +49,12 @@ async function uploadFileToImageKit(file: File): Promise<string | null> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('fileName', file.name);
-    formData.append('publicKey', "public_IfRvA+ieL0CZzBuuO9i9cFceLn8=");
+    formData.append('publicKey', authParams.publicKey);
     formData.append('signature', authParams.signature);
     formData.append('expire', authParams.expire);
     formData.append('token', authParams.token);
 
-    const uploadResponse = await fetch('https://upload.imagekit.io/api/v1/files/upload', {
+    const uploadResponse = await fetch(authParams.urlEndpoint.startsWith('https://ik.imagekit.io') ? 'https://upload.imagekit.io/api/v1/files/upload' : authParams.urlEndpoint, {
       method: 'POST',
       body: formData,
     });
@@ -80,13 +79,10 @@ export default function ProfilePage() {
   const router = useRouter();
   const { userProfile, isLoadingProfile } = useUser();
   const [isEditing, setIsEditing] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [newPhotoFile, setNewPhotoFile] = useState<File | null>(null);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   
-  // Local state to manage profile for editing purposes without directly mutating context
-  const [editableProfile, setEditableProfile] = useState<UserProfile | null>(null);
-
   const { control, handleSubmit, register, reset, watch, formState: { errors } } = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
@@ -101,7 +97,6 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (userProfile) {
-        setEditableProfile(userProfile);
         reset({
             paymentMethods: userProfile.paymentMethods || { cash: true, click: false, clickCode: '' },
             secondaryPhone: userProfile.secondaryPhone || '',
@@ -118,10 +113,10 @@ export default function ProfilePage() {
   };
 
   const onSubmit = async (data: ProfileFormValues) => {
-    if (!editableProfile || !auth.currentUser) return;
-    setIsLoading(true);
+    if (!userProfile || !auth.currentUser) return;
+    setIsSaving(true);
     
-    let actualUploadedPhotoUrl: string | null = editableProfile.idPhotoUrl || null;
+    let actualUploadedPhotoUrl: string | null = userProfile.idPhotoUrl || null;
     if (newPhotoFile) {
       const uploadedUrl = await uploadFileToImageKit(newPhotoFile);
       if (uploadedUrl) {
@@ -143,15 +138,6 @@ export default function ProfilePage() {
 
     try {
       await updateUserProfile(auth.currentUser.uid, updates);
-      // The UserContext will automatically update the profile, so we just need to re-sync our local editable state
-      const refreshedProfile = await getUserProfile(auth.currentUser.uid);
-      setEditableProfile(refreshedProfile); 
-       if (refreshedProfile) {
-          reset({ 
-            paymentMethods: refreshedProfile.paymentMethods || { cash: true, click: false, clickCode: '' }, 
-            secondaryPhone: refreshedProfile.secondaryPhone || '',
-          });
-        }
       setNewPhotoFile(null); 
       setIsEditing(false);
       toast({ title: "تم تحديث الملف الشخصي بنجاح!" });
@@ -159,7 +145,7 @@ export default function ProfilePage() {
       console.error("Profile Update Error:", error);
       toast({ title: "خطأ في تحديث الملف الشخصي", variant: "destructive" });
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   };
 
@@ -184,7 +170,7 @@ export default function ProfilePage() {
   }
 
   // Use a default/mock profile to prevent crashes when userProfile is null
-  const displayProfile = editableProfile || {
+  const displayProfile = userProfile || {
     fullName: 'اسم السائق',
     email: 'email@example.com',
     rating: 0,
@@ -199,7 +185,7 @@ export default function ProfilePage() {
   let avatarSrc = "https://placehold.co/100x100.png?text=S"; 
   if (newPhotoFile) {
     avatarSrc = URL.createObjectURL(newPhotoFile); 
-  } else if (displayProfile && displayProfile.idPhotoUrl) { 
+  } else if (displayProfile.idPhotoUrl) { 
     avatarSrc = displayProfile.idPhotoUrl; 
   }
 
@@ -231,7 +217,7 @@ export default function ProfilePage() {
           
           <CardTitle className="text-2xl mt-2">{displayProfile.fullName}</CardTitle>
           <div className="text-muted-foreground flex items-center">
-            <Star className="w-4 h-4 ms-1 text-yellow-400 fill-yellow-400" /> {displayProfile.rating || 'N/A'}
+            <Star className="w-4 h-4 ms-1 text-yellow-400 fill-yellow-400" /> {displayProfile.rating?.toFixed(1) || 'N/A'}
             <span className="mx-2">|</span>
             <Briefcase className="w-4 h-4 ms-1" /> {displayProfile.tripsCount || 0} رحلة
           </div>
@@ -334,8 +320,8 @@ export default function ProfilePage() {
             )}
             
             {isEditing && (
-              <Button type="submit" className="w-full mt-6" disabled={isLoading}>
-                {isLoading ? <Loader2 className="animate-spin" /> : <><Save className="ms-2 h-4 w-4" /> حفظ التغييرات</>}
+              <Button type="submit" className="w-full mt-6" disabled={isSaving}>
+                {isSaving ? <Loader2 className="animate-spin" /> : <><Save className="ms-2 h-4 w-4" /> حفظ التغييرات</>}
               </Button>
             )}
           </form>
