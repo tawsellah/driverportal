@@ -21,6 +21,7 @@ import {
     getUserProfile,
     chargeWalletWithCode,
     getWalletTransactions,
+    getDriverWhatsAppNumber,
     type WalletTransaction
 } from '@/lib/firebaseService';
 import { useRouter } from 'next/navigation';
@@ -200,6 +201,8 @@ export default function HistoryPage() {
   const [isTransactionsOpen, setIsTransactionsOpen] = useState(false);
   const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([]);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
+  const [whatsAppNumber, setWhatsAppNumber] = useState<string | null>(null);
+
 
   const fetchInitialData = useCallback(async (userId: string, initialLoad: boolean = true) => {
     if (initialLoad) setIsLoading(true);
@@ -224,6 +227,15 @@ export default function HistoryPage() {
             });
             setAllTrips([]);
         }
+        
+        try {
+            const number = await getDriverWhatsAppNumber();
+            setWhatsAppNumber(number);
+        } catch (waError) {
+            console.warn("Could not fetch WhatsApp number:", waError);
+            setWhatsAppNumber(null);
+        }
+
     } catch (error) {
         console.error("Error fetching initial page data:", error);
         toast({ 
@@ -387,8 +399,8 @@ export default function HistoryPage() {
                 <HistoryIcon className="ms-2 h-4 w-4" />
                 عرض حركات المحفظة
             </Button>
-            <Button asChild variant="secondary" className="w-full sm:w-auto flex-grow bg-green-50 hover:bg-green-100 dark:bg-green-900/50 dark:hover:bg-green-800/60 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800">
-                <Link href="https://wa.me/962791234567" target="_blank" rel="noopener noreferrer">
+            <Button asChild variant="secondary" disabled={!whatsAppNumber} className="w-full sm:w-auto flex-grow bg-green-50 hover:bg-green-100 dark:bg-green-900/50 dark:hover:bg-green-800/60 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800">
+                <Link href={whatsAppNumber ? `https://wa.me/${whatsAppNumber}` : '#'} target="_blank" rel="noopener noreferrer">
                     <WhatsAppIcon className="ms-2 h-4 w-4" />
                     تواصل مع الدعم
                 </Link>
@@ -421,3 +433,4 @@ export default function HistoryPage() {
     </div>
   );
 }
+

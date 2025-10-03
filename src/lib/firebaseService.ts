@@ -77,7 +77,7 @@ export interface UserProfile {
   };
   walletBalance?: number; 
   topUpCodes?: Record<string, UserProfileTopUpCode>;
-  status: 'pending' | 'approved' | 'rejected' | 'suspended';
+  status: 'pending' | 'approved' | 'rejected' | 'suspended' | 'active';
   createdAt: any; 
   updatedAt?: any;
   rating: number;
@@ -928,6 +928,16 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
     };
     await set(newRequestRef, requestData);
 };
+
+export const getDriverWhatsAppNumber = async (): Promise<string | null> => {
+  if (!databaseInternal) return null;
+  const whatsAppRef = ref(databaseInternal, 'driverWhatsApp');
+  const snapshot = await get(whatsAppRef);
+  if (snapshot.exists()) {
+    return snapshot.val();
+  }
+  return null;
+};
     
     
 
@@ -942,3 +952,4 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
 
 
     
+
