@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { Plus, Edit3, Users, Route, MapPin, CalendarDays, Clock, Armchair, DollarSign, Loader2, AlertTriangle, Ban, CheckCircle, Play, Wallet, FileText, Hash } from 'lucide-react';
+import { Plus, Edit3, Users, Route, MapPin, CalendarDays, Clock, Armchair, DollarSign, Loader2, AlertTriangle, Ban, CheckCircle, Play, Wallet, FileText, Hash, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -23,7 +23,8 @@ import { format, parseISO } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { JORDAN_GOVERNORATES, SEAT_CONFIG, type SeatID } from '@/lib/constants';
 import { 
-    auth, 
+    auth,
+    database, // Import main database
     getUpcomingAndOngoingTripsForDriver, 
     deleteTrip as fbDeleteTrip, 
     endTrip as fbEndTrip, 
@@ -33,10 +34,11 @@ import {
     type PassengerBookingDetails,
     getTripById 
 } from '@/lib/firebaseService';
+import { ref, onValue, off } from 'firebase/database'; // Import real-time DB functions
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/context/UserContext';
 import { Skeleton } from '@/components/ui/skeleton';
-import { UpdateDialog } from '@/components/shared/UpdateDialog'; // Import the new component
+import { UpdateDialog } from '@/components/shared/UpdateDialog';
 
 interface DisplayPassengerDetails {
   seatId: string;
@@ -45,6 +47,18 @@ interface DisplayPassengerDetails {
   paymentType?: string;
   dropOffPoint?: string;
 }
+
+interface AlertData {
+  enabled: boolean;
+  title: string;
+  description: string;
+  ctaText: string;
+  ctaLink: string;
+  icon: string; // We'll assume icon name is a string like 'RefreshCw'
+  version_current: string;
+  version_new: string;
+}
+
 
 function TripCard({ 
     trip, 
@@ -279,22 +293,37 @@ export default function TripsPage() {
   const [isLoadingPassengerDetails, setIsLoadingPassengerDetails] = useState(false);
   
   // State for the new update dialog
+  const [alertData, setAlertData] = useState<AlertData | null>(null);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
 
   useEffect(() => {
-    // Example: Show the update dialog for demonstration purposes
-    // In a real app, this would be based on logic from a remote config or API call
-    const timer = setTimeout(() => {
-        setIsUpdateDialogOpen(true);
-    }, 2000); // Show dialog 2 seconds after page load
+    if (!database) return;
+    const alertsRef = ref(database, 'Alerts');
+    
+    const listener = onValue(alertsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val() as AlertData;
+        setAlertData(data);
+        // Control dialog visibility based on the 'enabled' flag
+        setIsUpdateDialogOpen(data.enabled === true);
+      } else {
+        // If no data, disable the alert
+        setAlertData(null);
+        setIsUpdateDialogOpen(false);
+      }
+    });
 
-    return () => clearTimeout(timer);
+    // Cleanup listener on component unmount
+    return () => off(alertsRef, 'value', listener);
   }, []);
 
   const handleUpdate = () => {
-    // This is where you would redirect the user to the app store or a download link
-    window.location.href = 'https://play.google.com/store/apps/details?id=com.example.app';
-    toast({ title: "جاري إعادة توجيهك للتحديث..." });
+    if (alertData?.ctaLink) {
+      window.location.href = alertData.ctaLink;
+      toast({ title: "جاري إعادة توجيهك..." });
+    } else {
+      toast({ title: "خطأ", description: "رابط التحديث غير متوفر.", variant: "destructive" });
+    }
   };
 
 
@@ -495,26 +524,36 @@ export default function TripsPage() {
     : '';
 
   const canCreateTrip = trips.length === 0;
+  
+  // Choose icon dynamically. Default to RefreshCw if not specified or invalid
+  const IconComponent = alertData?.icon === 'RefreshCw' ? RefreshCw : RefreshCw;
+
 
   return (
     <div>
-      <UpdateDialog
-        isOpen={isUpdateDialogOpen}
-        onOpenChange={setIsUpdateDialogOpen}
-        title="تحديث جديد متوفر!"
-        description={
-          <>
-            <p>لقد قمنا بإصلاح بعض المشاكل وتحسين أداء التطبيق.</p>
-            <p className="mt-2 text-sm">
-                النسخة الحالية: 1.0.0
-                <br/>
-                النسخة الجديدة: 1.1.0
-            </p>
-          </>
-        }
-        ctaText="تحديث الآن"
-        onCtaClick={handleUpdate}
-      />
+      {alertData && (
+        <UpdateDialog
+            isOpen={isUpdateDialogOpen}
+            onOpenChange={setIsUpdateDialogOpen}
+            title={alertData.title || "تحديث متوفر"}
+            Icon={IconComponent}
+            description={
+            <>
+                <p>{alertData.description || "لقد قمنا بإصلاح بعض المشاكل وتحسين أداء التطبيق."}</p>
+                {alertData.version_current && alertData.version_new && (
+                <p className="mt-2 text-sm">
+                    النسخة الحالية: {alertData.version_current}
+                    <br/>
+                    النسخة الجديدة: {alertData.version_new}
+                </p>
+                )}
+            </>
+            }
+            ctaText={alertData.ctaText || "تحديث الآن"}
+            onCtaClick={handleUpdate}
+        />
+      )}
+
 
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl md:text-3xl font-bold h-underline">رحلاتك القادمة والجارية</h1>
@@ -607,3 +646,5 @@ export default function TripsPage() {
     </div>
   );
 }
+
+    
