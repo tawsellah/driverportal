@@ -205,19 +205,22 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
   if (!databaseInternal) return null;
   const userRef = ref(databaseInternal, `users/${userId}`);
   const snapshot = await get(userRef);
+
   if (snapshot.exists()) {
     const profile = snapshot.val() as UserProfile;
     
-    // Fetch wallet data from the separate wallet database
+    // ** CRITICAL FIX: Fetch wallet data and ensure it overrides any stale data in the profile **
     try {
         const walletData = await getWalletData(userId);
-        profile.walletBalance = walletData?.walletBalance || 0;
+        // If walletData exists, use its balance. If not, or if an error occurred, default to 0.
+        profile.walletBalance = walletData?.walletBalance ?? 0;
     } catch (walletError) {
-        console.warn("Could not fetch wallet data for profile, defaulting to 0. This is expected if the wallet doesn't exist yet.", walletError);
+        console.error("Critical error fetching wallet data for profile. Forcing balance to 0.", walletError);
+        // Force balance to 0 on any error to prevent using stale data.
         profile.walletBalance = 0;
     }
 
-
+    // Ensure topUpCodes is initialized
     if (!profile.topUpCodes) {
         profile.topUpCodes = {};
     }
@@ -853,6 +856,8 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
     await set(newRequestRef, requestData);
 };
     
+    
+
     
 
     
