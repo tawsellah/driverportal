@@ -5,8 +5,8 @@ import type { ReactNode } from 'react';
 import { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { onAuthUserChangedListener, type UserProfile } from '@/lib/firebaseService';
-import { auth, database } from '@/lib/firebase';
+import { onAuthUserChangedListener, getUserProfile, type UserProfile } from '@/lib/firebaseService';
+import { auth, database as mainDb, walletDatabase } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { ref, onValue, off } from 'firebase/database';
 import { setAuthStatus } from '@/lib/storage';
@@ -23,101 +23,99 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const router = useRouter();
   const { toast } = useToast();
-  // Ref to hold the profile listener unsubscribe function
-  const profileUnsubscribeRef = useRef<() => void>(() => {});
+  // Ref to hold profile and wallet listeners unsubscribe functions
+  const listenersRef = useRef<(() => void)[]>([]);
 
   useEffect(() => {
-    // This listener handles auth state changes (login/logout)
-    const authUnsubscribe = onAuthUserChangedListener((user) => {
-      // Detach any existing profile listener before setting up a new one
-      if (profileUnsubscribeRef.current) {
-        profileUnsubscribeRef.current();
-      }
+    // Helper function to clear all active listeners
+    const cleanupListeners = () => {
+      listenersRef.current.forEach(unsubscribe => unsubscribe());
+      listenersRef.current = [];
+    };
 
-      if (user && database) { // Ensure database is initialized
+    const authUnsubscribe = onAuthUserChangedListener(async (user) => {
+      cleanupListeners();
+
+      if (user && mainDb && walletDatabase) {
         setIsLoadingProfile(true);
-        const userProfileRef = ref(database, `users/${user.uid}`);
-        
-        // Set up the real-time listener on the user's profile data
-        const profileListener = onValue(userProfileRef, (snapshot) => {
-          if (snapshot.exists()) {
-            const profile = snapshot.val() as UserProfile;
+        try {
+          // 1. Fetch the initial, consolidated profile data using getUserProfile
+          const initialProfile = await getUserProfile(user.uid);
 
-            if (profile.status === 'pending') {
-              signOut(auth); 
+          if (initialProfile) {
+            // Access control checks
+            if (initialProfile.status === 'pending') {
+              signOut(auth);
               setAuthStatus(false);
-              setUserProfile(null); 
-              setIsLoadingProfile(false); 
-              toast({
-                title: "الحساب قيد المراجعة",
-                description: "حسابك لا يزال قيد المراجعة. يرجى الانتظار لحين الموافقة عليه.",
-                variant: "destructive",
-                duration: 5000,
-              });
-              router.push('/auth/signin'); 
-              return; 
+              toast({ title: "الحساب قيد المراجعة", description: "حسابك لا يزال قيد المراجعة.", variant: "destructive" });
+              router.push('/auth/signin');
+              setIsLoadingProfile(false);
+              return;
+            }
+             if (initialProfile.status === 'suspended') {
+              signOut(auth);
+              setAuthStatus(false);
+              toast({ title: "تم تعليق الحساب", description: "تم تعليق حسابك. يرجى التواصل مع الدعم.", variant: "destructive" });
+              router.push('/auth/signin');
+              setIsLoadingProfile(false);
+              return;
             }
 
-            // --- Access Control Logic for real-time changes ---
-            if (profile.status === 'suspended') {
-              signOut(auth); 
-              setAuthStatus(false);
-              setUserProfile(null); 
-              setIsLoadingProfile(false); 
-              toast({
-                title: "تم تعليق الحساب",
-                description: "تم تعليق حسابك بسبب مخالفة السياسات. يرجى التواصل مع الدعم لمزيد من التفاصيل.",
-                variant: "destructive",
-                duration: 5000,
+            setUserProfile(initialProfile);
+
+            // 2. Set up a dedicated listener for the wallet balance
+            const walletRef = ref(walletDatabase, `wallets/${user.uid}/walletBalance`);
+            const walletListener = onValue(walletRef, (snapshot) => {
+              const newBalance = snapshot.exists() ? snapshot.val() : 0;
+              setUserProfile(prevProfile => {
+                // Ensure we don't update if profile is null, and only update if balance changed
+                if (prevProfile && prevProfile.walletBalance !== newBalance) {
+                  return { ...prevProfile, walletBalance: newBalance };
+                }
+                return prevProfile;
               });
-              router.push('/auth/signin'); 
-              return; 
-            }
+            });
             
-            setUserProfile(profile);
+            // 3. Set up a listener for other user profile data that might change
+            const userProfileRef = ref(mainDb, `users/${user.uid}`);
+            const profileListener = onValue(userProfileRef, (snapshot) => {
+                if (snapshot.exists()) {
+                    const freshProfileData = snapshot.val();
+                    setUserProfile(prevProfile => ({...(prevProfile || initialProfile), ...freshProfileData}));
+                }
+            });
+
+            listenersRef.current.push(() => off(walletRef, 'value', walletListener));
+            listenersRef.current.push(() => off(userProfileRef, 'value', profileListener));
+
           } else {
-             // Profile doesn't exist, sign out the user to prevent access to the app
+             // Profile doesn't exist, critical error
              signOut(auth);
              setAuthStatus(false);
-             setUserProfile(null);
-             toast({
-                title: "خطأ في الحساب",
-                description: "لم يتم العثور على ملفك الشخصي. قد يكون الحساب محذوفاً.",
-                variant: "destructive",
-             });
+             toast({ title: "خطأ في الحساب", description: "لم يتم العثور على ملفك الشخصي.", variant: "destructive" });
              router.push('/auth/signin');
           }
-          setIsLoadingProfile(false);
-        }, (error) => {
-            console.error("Firebase onValue error:", error);
+        } catch (error) {
+            console.error("Error during user setup in UserContext:", error);
             signOut(auth);
             setAuthStatus(false);
-            setUserProfile(null);
-            setIsLoadingProfile(false);
+            toast({ title: "خطأ في تحميل البيانات", description: "فشل تحميل بيانات الملف الشخصي.", variant: "destructive" });
             router.push('/auth/signin');
-        });
-
-        // Store the new unsubscribe function in the ref
-        profileUnsubscribeRef.current = () => off(userProfileRef, 'value', profileListener);
+        } finally {
+            setIsLoadingProfile(false);
+        }
 
       } else {
-        // User is signed out or not present
+        // User is signed out
         setUserProfile(null);
         setIsLoadingProfile(false);
-        // Ensure any lingering listener is detached
-        if (profileUnsubscribeRef.current) {
-            profileUnsubscribeRef.current();
-        }
       }
     });
+    
+    listenersRef.current.push(authUnsubscribe);
 
     // Cleanup on component unmount
-    return () => {
-        authUnsubscribe();
-        if (profileUnsubscribeRef.current) {
-            profileUnsubscribeRef.current();
-        }
-    };
+    return () => cleanupListeners();
   }, [router, toast]);
 
   return (
