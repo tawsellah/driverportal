@@ -51,7 +51,7 @@ interface DisplayPassengerDetails {
 interface AlertData {
   enabled: boolean;
   title: string;
-  bodyText: string; // Changed from description
+  bodyText: string; 
   ctaText: string;
   ctaLink: string;
   icon: string;
@@ -537,18 +537,9 @@ export default function TripsPage() {
             onOpenChange={setIsUpdateDialogOpen}
             title={alertData.title || "تحديث متوفر"}
             Icon={IconComponent}
-            description={
-            <>
-                {alertData.bodyText && <p>{alertData.bodyText}</p>}
-                {alertData.version_current && alertData.version_new && (
-                <p className="mt-2 text-sm">
-                    النسخة الحالية: {alertData.version_current}
-                    <br/>
-                    النسخة الجديدة: {alertData.version_new}
-                </p>
-                )}
-            </>
-            }
+            bodyText={alertData.bodyText}
+            versionCurrent={alertData.version_current}
+            versionNew={alertData.version_new}
             ctaText={alertData.ctaText || "تحديث الآن"}
             onCtaClick={handleUpdate}
         />

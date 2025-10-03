@@ -1,7 +1,7 @@
 
 "use client";
 
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { X, RefreshCw } from "lucide-react";
 import type { LucideProps } from "lucide-react";
@@ -12,7 +12,9 @@ interface UpdateDialogProps {
   onOpenChange: (isOpen: boolean) => void;
   Icon?: ElementType<LucideProps>;
   title: string;
-  description: React.ReactNode; // Allow for complex descriptions with formatting
+  bodyText?: string;
+  versionCurrent?: string;
+  versionNew?: string;
   ctaText: string;
   onCtaClick: () => void;
 }
@@ -22,7 +24,9 @@ export function UpdateDialog({
   onOpenChange,
   Icon = RefreshCw,
   title,
-  description,
+  bodyText,
+  versionCurrent,
+  versionNew,
   ctaText,
   onCtaClick,
 }: UpdateDialogProps) {
@@ -33,6 +37,11 @@ export function UpdateDialog({
         onInteractOutside={(e) => e.preventDefault()} // Prevent closing on overlay click
         hideCloseButton // Hide default close button
       >
+        <DialogHeader className="hidden">
+           {/* This title is required for accessibility but is visually hidden. */}
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+
         <div className="relative p-6 pt-12">
           {/* Custom Close Button */}
           <button
@@ -48,12 +57,19 @@ export function UpdateDialog({
             <Icon className="h-6 w-6" />
           </div>
 
-          {/* Title */}
+          {/* Real Visible Title */}
           <h2 className="text-2xl font-bold text-center mb-4">{title}</h2>
 
           {/* Body Text */}
           <div className="text-center text-muted-foreground space-y-2 mb-8">
-            {description}
+            {bodyText && <p>{bodyText}</p>}
+            {versionCurrent && versionNew && (
+              <p className="mt-2 text-sm">
+                  النسخة الحالية: {versionCurrent}
+                  <br/>
+                  النسخة الجديدة: {versionNew}
+              </p>
+            )}
           </div>
 
           {/* CTA Button */}
