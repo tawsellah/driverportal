@@ -187,7 +187,7 @@ export const saveUserProfile = async (userId: string, profileData: Omit<UserProf
 };
 
 export const getWalletData = async (userId: string): Promise<{walletBalance: number} | null> => {
-    if (!walletDatabaseInternal) return { walletBalance: 0 };
+    if (!walletDatabaseInternal) return null;
     const walletRef = ref(walletDatabaseInternal, `wallets/${userId}`);
     try {
         const snapshot = await get(walletRef);
@@ -195,9 +195,9 @@ export const getWalletData = async (userId: string): Promise<{walletBalance: num
             return snapshot.val();
         }
     } catch (e) {
-        console.warn("Could not get wallet data, returning default. This is expected if the node doesn't exist yet.", e);
+        console.warn("Could not get wallet data, returning null. This is expected if the node doesn't exist yet.", e);
     }
-    return { walletBalance: 0 };
+    return null;
 };
 
 
@@ -861,3 +861,4 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
     
 
     
+
