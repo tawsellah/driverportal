@@ -86,7 +86,7 @@ export interface UserProfile {
 
 export interface WalletTransaction {
     id: string;
-    type: 'charge' | 'trip_earning' | 'trip_fee' | 'system_adjustment';
+    type: 'charge' | 'trip_earning' | 'trip_fee' | 'system_adjustment' | 'refund';
     amount: number; // Positive for income, negative for outcome
     date: any; // serverTimestamp
     description: string;
@@ -520,10 +520,13 @@ export const addTrip = async (driverId: string, tripData: NewTripData, currentBa
     // Fetch pricing configuration
     const pricingRef = ref(tripsDatabaseInternal, PRICING_PATH);
     const pricingSnapshot = await get(pricingRef);
-    const pricingConfig: PricingConfig | null = pricingSnapshot.exists() ? pricingSnapshot.val() : null;
+    if (!pricingSnapshot.exists()) {
+        throw new Error("لم يتم العثور على إعدادات التسعير. لا يمكن إنشاء الرحلة.");
+    }
+    const pricingConfig: PricingConfig = pricingSnapshot.val();
 
-    const fixedCommission = (pricingConfig && pricingConfig.commissionFixedEnabled) ? pricingConfig.commissionFixed : 0;
-    const percentageCommission = (pricingConfig && pricingConfig.commissionPercentageEnabled) ? pricingConfig.commissionPercentage : 0;
+    const fixedCommission = (pricingConfig.commissionFixedEnabled) ? pricingConfig.commissionFixed : 0;
+    const percentageCommission = (pricingConfig.commissionPercentageEnabled) ? pricingConfig.commissionPercentage : 0;
     const pricePerPassenger = tripData.pricePerPassenger || 0;
 
     // Calculate total trip commission based on the new formula
@@ -612,20 +615,76 @@ export const updateTrip = async (tripId: string, updates: Partial<Trip>): Promis
 };
 
 export const deleteTrip = async (tripId: string): Promise<void> => {
-  if (!tripsDatabaseInternal) return;
+  if (!tripsDatabaseInternal || !walletDatabaseInternal) {
+      throw new Error("خدمة قاعدة البيانات غير متاحة.");
+  }
   const tripRef = ref(tripsDatabaseInternal, `${CURRENT_TRIPS_PATH}/${tripId}`);
   const snapshot = await get(tripRef);
+
   if (snapshot.exists()) {
       const trip = snapshot.val() as Trip;
-      if (trip.status === 'upcoming' || trip.status === 'cancelled') {
-           const finishedTripRef = ref(tripsDatabaseInternal, `${FINISHED_TRIPS_PATH}/${tripId}`);
-           await set(finishedTripRef, { ...trip, status: 'cancelled', updatedAt: serverTimestamp() });
-           await remove(tripRef);
-      } else {
+      const driverId = trip.driverId;
+
+      // Ensure status allows cancellation
+      if (trip.status !== 'upcoming' && trip.status !== 'cancelled') {
           throw new Error("لا يمكن إلغاء رحلة جارية أو مكتملة. يجب إنهاؤها.");
       }
+
+      // Check if cancellation is within 5 minutes for refund
+      const now = Date.now();
+      const createdAt = typeof trip.createdAt === 'number' ? trip.createdAt : (trip.createdAt?.seconds * 1000 || now);
+      const FIVE_MINUTES_IN_MS = 5 * 60 * 1000;
+
+      if (now - createdAt < FIVE_MINUTES_IN_MS) {
+          // Find the original commission transaction to refund
+          const transactionsRef = ref(walletDatabaseInternal, `walletTransactions/${driverId}`);
+          const transactionsQuery = query(transactionsRef, orderByChild('tripId'), equalTo(tripId));
+          const txSnapshot = await get(transactionsQuery);
+
+          if (txSnapshot.exists()) {
+              const transactions = txSnapshot.val();
+              let commissionTransaction: WalletTransaction | null = null;
+              let commissionTxId: string | null = null;
+
+              for (const txId in transactions) {
+                  if (transactions[txId].type === 'trip_fee') {
+                      commissionTransaction = transactions[txId];
+                      commissionTxId = txId;
+                      break;
+                  }
+              }
+              
+              if (commissionTransaction) {
+                  const refundAmount = Math.abs(commissionTransaction.amount);
+
+                  // Add refund transaction
+                  await addWalletTransaction(driverId, {
+                      type: 'refund',
+                      amount: refundAmount,
+                      date: serverTimestamp(),
+                      description: `استرداد عمولة لإلغاء رحلة #${trip.tripReferenceNumber}`,
+                      tripId: tripId,
+                  });
+
+                  // Update wallet balance
+                  const walletRef = ref(walletDatabaseInternal, `wallets/${driverId}/walletBalance`);
+                  await runTransaction(walletRef, (currentBalance) => {
+                      return (currentBalance || 0) + refundAmount;
+                  });
+              }
+          }
+      }
+
+      // Move trip to finishedTrips with 'cancelled' status
+      const finishedTripRef = ref(tripsDatabaseInternal, `${FINISHED_TRIPS_PATH}/${tripId}`);
+      await set(finishedTripRef, { ...trip, status: 'cancelled', updatedAt: serverTimestamp() });
+      await remove(tripRef);
+
+  } else {
+      console.warn(`Trip with ID ${tripId} not found in currentTrips for deletion.`);
   }
 };
+
 
 export const getTripById = async (tripId: string): Promise<Trip | null> => {
   if (!tripsDatabaseInternal) return null;
@@ -880,3 +939,4 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
 
 
     
+
