@@ -501,40 +501,100 @@ const TRIP_COUNTERS_PATH = 'tripCounters';
 
 
 export const addTrip = async (driverId: string, tripData: NewTripData): Promise<Trip> => {
-  if (!tripsDatabaseInternal) throw new Error("Trips database is not initialized.");
-
-  // 1. Get the new trip reference number using a transaction
-  const counterRef = ref(tripsDatabaseInternal, `${TRIP_COUNTERS_PATH}/lastTripNumber`);
-  const transactionResult = await runTransaction(counterRef, (currentValue) => {
-    if (currentValue === null) {
-      return 1000; // Initialize if it doesn't exist
+    if (!tripsDatabaseInternal || !walletDatabaseInternal || !databaseInternal) {
+        throw new Error("إحدى خدمات قاعدة البيانات غير متاحة (الرحلات، المحفظة، أو المستخدمين).");
     }
-    return currentValue + 1;
-  });
 
-  if (!transactionResult.committed) {
-    throw new Error("Failed to generate a new trip reference number.");
-  }
-  const newTripReferenceNumber = transactionResult.snapshot.val();
+    const tripCommission = 0.25; // Fixed commission of 0.25 JOD per trip
 
-  // 2. Create the new trip with the reference number
-  const newTripRef = push(ref(tripsDatabaseInternal, CURRENT_TRIPS_PATH));
-  const newTripId = newTripRef.key;
-  if (!newTripId) throw new Error("Could not create new trip ID.");
+    const walletRef = ref(walletDatabaseInternal, `wallets/${driverId}`);
 
-  const fullTripData: Trip = {
-    id: newTripId,
-    driverId: driverId,
-    tripReferenceNumber: newTripReferenceNumber,
-    ...tripData,
-    status: 'upcoming',
-    createdAt: serverTimestamp(),
-    selectedSeats: [],
-  };
+    // --- Start Wallet Transaction ---
+    const walletTransactionResult = await runTransaction(walletRef, (currentWallet) => {
+        if (currentWallet === null) {
+            // Wallet doesn't exist, which means balance is 0. Abort.
+            // We don't create it here because a driver must have a wallet.
+            return; // Abort transaction
+        }
 
-  await set(newTripRef, fullTripData);
-  return fullTripData;
+        const currentBalance = Number(currentWallet.walletBalance) || 0;
+
+        if (currentBalance < tripCommission) {
+            // Not enough balance. Abort transaction. The calling function will throw an error.
+            return; // Abort
+        }
+
+        // Deduct commission
+        currentWallet.walletBalance = currentBalance - tripCommission;
+        currentWallet.updatedAt = serverTimestamp();
+        return currentWallet;
+    });
+    // --- End Wallet Transaction ---
+
+    if (!walletTransactionResult.committed) {
+        throw new Error("رصيد المحفظة غير كافٍ لإنشاء الرحلة. العمولة المطلوبة: " + tripCommission.toFixed(2) + " د.أ");
+    }
+    
+    let newTripId: string | null = null;
+    try {
+        // 1. Get the new trip reference number using a transaction
+        const counterRef = ref(tripsDatabaseInternal, `${TRIP_COUNTERS_PATH}/lastTripNumber`);
+        const tripCounterResult = await runTransaction(counterRef, (currentValue) => {
+            return (currentValue || 1000) + 1;
+        });
+
+        if (!tripCounterResult.committed) {
+            throw new Error("فشل في إنشاء الرقم المرجعي للرحلة.");
+        }
+        const newTripReferenceNumber = tripCounterResult.snapshot.val();
+
+        // 2. Create the new trip with the reference number
+        const newTripRef = push(ref(tripsDatabaseInternal, CURRENT_TRIPS_PATH));
+        newTripId = newTripRef.key;
+        if (!newTripId) throw new Error("فشل في إنشاء معرّف فريد للرحلة.");
+
+        const fullTripData: Trip = {
+            id: newTripId,
+            driverId: driverId,
+            tripReferenceNumber: newTripReferenceNumber,
+            ...tripData,
+            status: 'upcoming',
+            createdAt: serverTimestamp(),
+            selectedSeats: [],
+        };
+
+        await set(newTripRef, fullTripData);
+        
+        // 3. Log the commission transaction AFTER trip creation is successful
+        await addWalletTransaction(driverId, {
+            type: 'trip_fee',
+            amount: -tripCommission,
+            date: serverTimestamp(),
+            description: `عمولة إنشاء رحلة جديدة رقم #${newTripReferenceNumber}`,
+            tripId: newTripId,
+        });
+
+        return fullTripData;
+
+    } catch (tripCreationError) {
+        // If trip creation fails, we must refund the commission.
+        console.error("Trip creation failed after commission was deducted. Refunding...", tripCreationError);
+        const refundResult = await runTransaction(walletRef, (currentWallet) => {
+             if (currentWallet) {
+                currentWallet.walletBalance = (currentWallet.walletBalance || 0) + tripCommission;
+             }
+             return currentWallet;
+        });
+        if(refundResult.committed){
+            console.log("Commission refunded successfully.");
+        } else {
+            console.error("CRITICAL ERROR: FAILED TO REFUND COMMISSION. MANUAL INTERVENTION REQUIRED FOR DRIVER:", driverId);
+        }
+        // Re-throw the original error
+        throw tripCreationError;
+    }
 };
+
 
 export const startTrip = async (tripId: string): Promise<void> => {
   if (!tripsDatabaseInternal) return;
@@ -817,3 +877,5 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
     };
     await set(newRequestRef, requestData);
 };
+
+    
