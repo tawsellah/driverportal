@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { auth as authInternal , database as databaseInternal } from './firebase'; 
@@ -505,7 +504,8 @@ export const addTrip = async (driverId: string, tripData: NewTripData): Promise<
         throw new Error("إحدى خدمات قاعدة البيانات غير متاحة (الرحلات، المحفظة، أو المستخدمين).");
     }
 
-    const tripCommission = 0.25; // Fixed commission of 0.25 JOD per trip
+    const tripCommissionPercentage = 0.025; // 2.5%
+    const tripCommission = tripData.pricePerPassenger * tripCommissionPercentage;
 
     const walletRef = ref(walletDatabaseInternal, `wallets/${driverId}`);
 
@@ -513,7 +513,6 @@ export const addTrip = async (driverId: string, tripData: NewTripData): Promise<
     const walletTransactionResult = await runTransaction(walletRef, (currentWallet) => {
         if (currentWallet === null) {
             // Wallet doesn't exist, which means balance is 0. Abort.
-            // We don't create it here because a driver must have a wallet.
             return; // Abort transaction
         }
 
@@ -877,5 +876,5 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
     };
     await set(newRequestRef, requestData);
 };
-
+    
     
