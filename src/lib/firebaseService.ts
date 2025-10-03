@@ -500,30 +500,38 @@ const TRIP_COUNTERS_PATH = 'tripCounters';
 
 
 export const addTrip = async (driverId: string, tripData: NewTripData): Promise<Trip> => {
-    if (!tripsDatabaseInternal || !walletDatabaseInternal || !databaseInternal) {
-        throw new Error("إحدى خدمات قاعدة البيانات غير متاحة (الرحلات، المحفظة، أو المستخدمين).");
+    if (!tripsDatabaseInternal || !walletDatabaseInternal) {
+        throw new Error("إحدى خدمات قاعدة البيانات غير متاحة (الرحلات أو المحفظة).");
     }
 
-    const tripCommissionPercentage = 0.025; // 2.5%
-    const tripCommission = tripData.pricePerPassenger * tripCommissionPercentage;
+    const offeredSeatsCount = Object.values(tripData.offeredSeatsConfig).filter(v => v === true).length;
+    const commissionPerSeat = 0.25; // 0.25 JD per seat
+    const tripCommission = offeredSeatsCount * commissionPerSeat;
+
+    if (tripCommission <= 0) {
+        throw new Error("لا يمكن إنشاء رحلة بدون مقاعد معروضة.");
+    }
 
     const walletRef = ref(walletDatabaseInternal, `wallets/${driverId}`);
 
     // --- Start Wallet Transaction ---
     const walletTransactionResult = await runTransaction(walletRef, (currentWallet) => {
-        if (currentWallet === null) {
-            // Wallet doesn't exist, which means balance is 0. Abort.
-            return; // Abort transaction
-        }
-
-        const currentBalance = Number(currentWallet.walletBalance) || 0;
+        const currentBalance = currentWallet?.walletBalance || 0;
 
         if (currentBalance < tripCommission) {
-            // Not enough balance. Abort transaction. The calling function will throw an error.
-            return; // Abort
+            // Abort transaction by returning undefined. The error will be thrown outside.
+            return; 
         }
 
-        // Deduct commission
+        // If wallet doesn't exist, create it. Otherwise, update it.
+        if (currentWallet === null) {
+            return { 
+                walletBalance: -tripCommission, // This should not happen if balance check is proper
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            };
+        }
+        
         currentWallet.walletBalance = currentBalance - tripCommission;
         currentWallet.updatedAt = serverTimestamp();
         return currentWallet;
@@ -877,4 +885,6 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
     await set(newRequestRef, requestData);
 };
     
+    
+
     
