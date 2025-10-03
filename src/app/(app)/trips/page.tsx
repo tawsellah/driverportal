@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useEffect, useState, useCallback } from 'react';
@@ -37,6 +36,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/context/UserContext';
 import { Skeleton } from '@/components/ui/skeleton';
+import { UpdateDialog } from '@/components/shared/UpdateDialog'; // Import the new component
 
 interface DisplayPassengerDetails {
   seatId: string;
@@ -277,6 +277,26 @@ export default function TripsPage() {
   const [currentTripForPassengers, setCurrentTripForPassengers] = useState<Trip | null>(null);
   const [passengerDetailsList, setPassengerDetailsList] = useState<DisplayPassengerDetails[]>([]);
   const [isLoadingPassengerDetails, setIsLoadingPassengerDetails] = useState(false);
+  
+  // State for the new update dialog
+  const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
+
+  useEffect(() => {
+    // Example: Show the update dialog for demonstration purposes
+    // In a real app, this would be based on logic from a remote config or API call
+    const timer = setTimeout(() => {
+        setIsUpdateDialogOpen(true);
+    }, 2000); // Show dialog 2 seconds after page load
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleUpdate = () => {
+    // This is where you would redirect the user to the app store or a download link
+    window.location.href = 'https://play.google.com/store/apps/details?id=com.example.app';
+    toast({ title: "جاري إعادة توجيهك للتحديث..." });
+  };
+
 
   const fetchTripsData = useCallback(async (isInitialLoad = false) => {
     if (isInitialLoad) {
@@ -478,6 +498,24 @@ export default function TripsPage() {
 
   return (
     <div>
+      <UpdateDialog
+        isOpen={isUpdateDialogOpen}
+        onOpenChange={setIsUpdateDialogOpen}
+        title="تحديث جديد متوفر!"
+        description={
+          <>
+            <p>لقد قمنا بإصلاح بعض المشاكل وتحسين أداء التطبيق.</p>
+            <p className="mt-2 text-sm">
+                النسخة الحالية: 1.0.0
+                <br/>
+                النسخة الجديدة: 1.1.0
+            </p>
+          </>
+        }
+        ctaText="تحديث الآن"
+        onCtaClick={handleUpdate}
+      />
+
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl md:text-3xl font-bold h-underline">رحلاتك القادمة والجارية</h1>
         {canCreateTrip ? (
@@ -569,10 +607,3 @@ export default function TripsPage() {
     </div>
   );
 }
-
-    
-
-    
-
-
-
