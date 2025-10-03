@@ -639,18 +639,16 @@ export const deleteTrip = async (tripId: string): Promise<void> => {
       if (now - createdAt < FIVE_MINUTES_IN_MS) {
           // Find the original commission transaction to refund
           const transactionsRef = ref(walletDatabaseInternal, `walletTransactions/${driverId}`);
-          const transactionsQuery = query(transactionsRef, orderByChild('tripId'), equalTo(tripId));
-          const txSnapshot = await get(transactionsQuery);
+          const txSnapshot = await get(transactionsRef);
 
           if (txSnapshot.exists()) {
               const transactions = txSnapshot.val();
               let commissionTransaction: WalletTransaction | null = null;
-              let commissionTxId: string | null = null;
 
+              // Client-side filtering to find the transaction
               for (const txId in transactions) {
-                  if (transactions[txId].type === 'trip_fee') {
+                  if (transactions[txId].tripId === tripId && transactions[txId].type === 'trip_fee') {
                       commissionTransaction = transactions[txId];
-                      commissionTxId = txId;
                       break;
                   }
               }
