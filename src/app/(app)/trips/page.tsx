@@ -560,22 +560,6 @@ export default function TripsPage() {
         )}
       </div>
 
-       <Card>
-        <CardHeader className="flex flex-row items-center justify-between p-4">
-          <CardTitle className="text-lg">رصيد المحفظة</CardTitle>
-          <Wallet className="h-6 w-6 text-primary" />
-        </CardHeader>
-        <CardContent className="p-4 pt-0">
-          {isLoadingProfile ? (
-             <Skeleton className="h-8 w-2/4" />
-          ) : (
-            <p className="text-2xl font-bold">
-              {(userProfile?.walletBalance || 0).toFixed(2)} <span className="text-sm font-normal text-muted-foreground">د.أ</span>
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
       {trips.length === 0 ? (
         <Card className="text-center py-10">
           <CardContent className="flex flex-col items-center">
@@ -653,4 +637,3 @@ export default function TripsPage() {
   );
 }
 
-    
