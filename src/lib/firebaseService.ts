@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { auth as authInternal , database as databaseInternal } from './firebase'; 
@@ -143,6 +144,13 @@ export interface SupportRequestData {
   createdAt?: any;
 }
 
+interface PricingConfig {
+    commissionFixed: number;
+    commissionFixedEnabled: boolean;
+    commissionPercentage: number;
+    commissionPercentageEnabled: boolean;
+}
+
 
 // --- Auth Service ---
 export const getCurrentUser = (): FirebaseAuthUser | null => {
@@ -209,18 +217,14 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
   if (snapshot.exists()) {
     const profile = snapshot.val() as UserProfile;
     
-    // ** CRITICAL FIX: Fetch wallet data and ensure it overrides any stale data in the profile **
     try {
         const walletData = await getWalletData(userId);
-        // If walletData exists, use its balance. If not, or if an error occurred, default to 0.
         profile.walletBalance = walletData?.walletBalance ?? 0;
     } catch (walletError) {
         console.error("Critical error fetching wallet data for profile. Forcing balance to 0.", walletError);
-        // Force balance to 0 on any error to prevent using stale data.
         profile.walletBalance = 0;
     }
 
-    // Ensure topUpCodes is initialized
     if (!profile.topUpCodes) {
         profile.topUpCodes = {};
     }
@@ -500,6 +504,7 @@ const FINISHED_TRIPS_PATH = 'finishedTrips';
 const STOP_STATIONS_PATH = 'stopstations';
 const SUPPORT_REQUESTS_PATH = 'supportRequests';
 const TRIP_COUNTERS_PATH = 'tripCounters';
+const PRICING_PATH = 'pricing/default/Sedan'; // Assuming Sedan for now
 
 
 export const addTrip = async (driverId: string, tripData: NewTripData, currentBalance: number): Promise<Trip> => {
@@ -511,8 +516,18 @@ export const addTrip = async (driverId: string, tripData: NewTripData, currentBa
     if (offeredSeatsCount === 0) {
         throw new Error("لا يمكن إنشاء رحلة بدون مقاعد معروضة.");
     }
-    const commissionPerSeat = 0.25; // 0.25 JD per offered seat
-    const tripCommission = offeredSeatsCount * commissionPerSeat;
+
+    // Fetch pricing configuration
+    const pricingRef = ref(tripsDatabaseInternal, PRICING_PATH);
+    const pricingSnapshot = await get(pricingRef);
+    const pricingConfig: PricingConfig | null = pricingSnapshot.exists() ? pricingSnapshot.val() : null;
+
+    const fixedCommission = (pricingConfig && pricingConfig.commissionFixedEnabled) ? pricingConfig.commissionFixed : 0;
+    const percentageCommission = (pricingConfig && pricingConfig.commissionPercentageEnabled) ? pricingConfig.commissionPercentage : 0;
+    const pricePerPassenger = tripData.pricePerPassenger || 0;
+
+    // Calculate total trip commission based on the new formula
+    const tripCommission = (offeredSeatsCount * fixedCommission) + (offeredSeatsCount * (percentageCommission / 100) * pricePerPassenger);
 
     if (currentBalance < tripCommission) {
         throw new Error(`رصيد المحفظة غير كافٍ. الرصيد الحالي: ${currentBalance.toFixed(2)} د.أ، العمولة المطلوبة: ${tripCommission.toFixed(2)} د.أ`);
