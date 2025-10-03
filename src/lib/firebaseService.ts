@@ -219,6 +219,7 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
     
     try {
         const walletData = await getWalletData(userId);
+        // Force wallet balance to the fetched value, or 0 if it fails or doesn't exist.
         profile.walletBalance = walletData?.walletBalance ?? 0;
     } catch (walletError) {
         console.error("Critical error fetching wallet data for profile. Forcing balance to 0.", walletError);
@@ -736,18 +737,18 @@ export const getUpcomingAndOngoingTripsForDriver = async (driverId: string): Pro
 export const getActiveTripForDriver = async (driverId: string): Promise<Trip | null> => {
   if (!tripsDatabaseInternal) return null;
   try {
-    const tripsRef = query(ref(tripsDatabaseInternal, CURRENT_TRIPS_PATH), orderByChild('driverId'), equalTo(driverId));
+    const tripsRef = ref(tripsDatabaseInternal, CURRENT_TRIPS_PATH);
     const snapshot = await get(tripsRef);
     if (snapshot.exists()) {
       let activeTrip: Trip | null = null;
-      snapshot.forEach((childSnapshot) => {
-        const trip = childSnapshot.val() as Trip;
-        if (trip.status === 'upcoming' || trip.status === 'ongoing') {
-          activeTrip = trip;
-          // Exit loop early if found
-          return true;
+      const allTrips = snapshot.val();
+      for (const tripId in allTrips) {
+        const trip = allTrips[tripId] as Trip;
+        if (trip.driverId === driverId && (trip.status === 'upcoming' || trip.status === 'ongoing')) {
+            activeTrip = trip;
+            break; 
         }
-      });
+      }
       return activeTrip;
     }
   } catch(e){
@@ -940,3 +941,6 @@ export const submitSupportRequest = async (data: Omit<SupportRequestData, 'statu
 
     
 
+
+
+    
