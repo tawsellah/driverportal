@@ -147,7 +147,12 @@ export default function CreateTripPage() {
         toast({ title: "لا يمكنك إنشاء رحلة جديدة", description: "لديك رحلة نشطة بالفعل. قم بإنهائها أو إلغائها أولاً.", variant: "destructive" });
         return;
     }
-    if (!userProfile || (userProfile.walletBalance || 0) <= 0) {
+    
+    // We get the fresh profile again before submitting to have the most up-to-date balance.
+    const freshProfile = await getUserProfile(currentUser.uid);
+    const currentBalance = freshProfile?.walletBalance || 0;
+
+    if (currentBalance <= 0) {
       toast({ title: "رصيد المحفظة غير كافٍ", description: "يجب شحن المحفظة لتتمكن من إنشاء رحلة جديدة.", variant: "destructive" });
       return;
     }
@@ -176,7 +181,7 @@ export default function CreateTripPage() {
     };
 
     try {
-      await addTrip(currentUser.uid, newTripData);
+      await addTrip(currentUser.uid, newTripData, currentBalance);
       toast({ title: "تم إنشاء الرحلة بنجاح!" });
 
       if (data.startPoint && data.destination && newTripData.stops && newTripData.stops.length > 0) {

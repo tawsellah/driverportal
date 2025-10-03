@@ -499,47 +499,20 @@ const SUPPORT_REQUESTS_PATH = 'supportRequests';
 const TRIP_COUNTERS_PATH = 'tripCounters';
 
 
-export const addTrip = async (driverId: string, tripData: NewTripData): Promise<Trip> => {
+export const addTrip = async (driverId: string, tripData: NewTripData, currentBalance: number): Promise<Trip> => {
     if (!tripsDatabaseInternal || !walletDatabaseInternal) {
         throw new Error("إحدى خدمات قاعدة البيانات غير متاحة (الرحلات أو المحفظة).");
     }
 
     const offeredSeatsCount = Object.values(tripData.offeredSeatsConfig).filter(v => v === true).length;
-    const commissionPerSeat = 0.25; // 0.25 JD per seat
-    const tripCommission = offeredSeatsCount * commissionPerSeat;
-
-    if (tripCommission <= 0) {
+    if (offeredSeatsCount === 0) {
         throw new Error("لا يمكن إنشاء رحلة بدون مقاعد معروضة.");
     }
+    const commissionPerSeat = 0.25; // 0.25 JD per offered seat
+    const tripCommission = offeredSeatsCount * commissionPerSeat;
 
-    const walletRef = ref(walletDatabaseInternal, `wallets/${driverId}`);
-
-    // --- Start Wallet Transaction ---
-    const walletTransactionResult = await runTransaction(walletRef, (currentWallet) => {
-        const currentBalance = currentWallet?.walletBalance || 0;
-
-        if (currentBalance < tripCommission) {
-            // Abort transaction by returning undefined. The error will be thrown outside.
-            return; 
-        }
-
-        // If wallet doesn't exist, create it. Otherwise, update it.
-        if (currentWallet === null) {
-            return { 
-                walletBalance: -tripCommission, // This should not happen if balance check is proper
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-            };
-        }
-        
-        currentWallet.walletBalance = currentBalance - tripCommission;
-        currentWallet.updatedAt = serverTimestamp();
-        return currentWallet;
-    });
-    // --- End Wallet Transaction ---
-
-    if (!walletTransactionResult.committed) {
-        throw new Error("رصيد المحفظة غير كافٍ لإنشاء الرحلة. العمولة المطلوبة: " + tripCommission.toFixed(2) + " د.أ");
+    if (currentBalance < tripCommission) {
+        throw new Error(`رصيد المحفظة غير كافٍ. الرصيد الحالي: ${currentBalance.toFixed(2)} د.أ، العمولة المطلوبة: ${tripCommission.toFixed(2)} د.أ`);
     }
     
     let newTripId: string | null = null;
@@ -572,7 +545,12 @@ export const addTrip = async (driverId: string, tripData: NewTripData): Promise<
 
         await set(newTripRef, fullTripData);
         
-        // 3. Log the commission transaction AFTER trip creation is successful
+        // 3. Deduct commission from wallet AFTER trip creation is successful
+        const walletRef = ref(walletDatabaseInternal, `wallets/${driverId}`);
+        const newBalance = currentBalance - tripCommission;
+        await update(walletRef, { walletBalance: newBalance, updatedAt: serverTimestamp() });
+        
+        // 4. Log the commission transaction
         await addWalletTransaction(driverId, {
             type: 'trip_fee',
             amount: -tripCommission,
@@ -584,20 +562,10 @@ export const addTrip = async (driverId: string, tripData: NewTripData): Promise<
         return fullTripData;
 
     } catch (tripCreationError) {
-        // If trip creation fails, we must refund the commission.
-        console.error("Trip creation failed after commission was deducted. Refunding...", tripCreationError);
-        const refundResult = await runTransaction(walletRef, (currentWallet) => {
-             if (currentWallet) {
-                currentWallet.walletBalance = (currentWallet.walletBalance || 0) + tripCommission;
-             }
-             return currentWallet;
-        });
-        if(refundResult.committed){
-            console.log("Commission refunded successfully.");
-        } else {
-            console.error("CRITICAL ERROR: FAILED TO REFUND COMMISSION. MANUAL INTERVENTION REQUIRED FOR DRIVER:", driverId);
-        }
-        // Re-throw the original error
+        console.error("Trip creation failed. An error occurred during the process.", tripCreationError);
+        // No refund logic needed here as commission is deducted after trip creation.
+        // If trip creation fails, commission won't be deducted.
+        // If commission deduction fails, the trip is already created, which is an acceptable state for manual correction.
         throw tripCreationError;
     }
 };
