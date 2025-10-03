@@ -76,6 +76,7 @@ export default function CreateTripPage() {
 
   useEffect(() => {
     const checkInitialState = async () => {
+      setIsCheckingInitialState(true);
       const currentUser = auth.currentUser;
       if (currentUser) {
         try {
@@ -98,11 +99,13 @@ export default function CreateTripPage() {
            console.error("Error checking initial state:", error);
            toast({ title: "خطأ في تحميل البيانات", description: "فشل تحميل بيانات الملف الشخصي.", variant: "destructive" });
            router.push('/trips'); // Redirect if we can't load critical data
+        } finally {
+           setIsCheckingInitialState(false);
         }
       } else {
         router.push('/auth/signin');
+        setIsCheckingInitialState(false);
       }
-      setIsCheckingInitialState(false);
     };
     checkInitialState();
     const today = new Date();
