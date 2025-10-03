@@ -194,6 +194,7 @@ export default function CreateTripPage() {
     } catch (error) {
       console.error("Error creating trip:", error);
       toast({ title: "خطأ في إنشاء الرحلة", description: (error as Error).message || "يرجى المحاولة مرة أخرى.", variant: "destructive" });
+      router.push('/trips');
     } finally {
       setIsLoading(false);
     }
