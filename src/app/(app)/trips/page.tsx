@@ -51,10 +51,10 @@ interface DisplayPassengerDetails {
 interface AlertData {
   enabled: boolean;
   title: string;
-  description: string;
+  bodyText: string; // Changed from description
   ctaText: string;
   ctaLink: string;
-  icon: string; // We'll assume icon name is a string like 'RefreshCw'
+  icon: string;
   version_current: string;
   version_new: string;
 }
@@ -539,7 +539,7 @@ export default function TripsPage() {
             Icon={IconComponent}
             description={
             <>
-                <p>{alertData.description || "لقد قمنا بإصلاح بعض المشاكل وتحسين أداء التطبيق."}</p>
+                {alertData.bodyText && <p>{alertData.bodyText}</p>}
                 {alertData.version_current && alertData.version_new && (
                 <p className="mt-2 text-sm">
                     النسخة الحالية: {alertData.version_current}
