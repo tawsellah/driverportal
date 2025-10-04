@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useForm, type SubmitHandler } from 'react-hook-form';
@@ -29,6 +29,11 @@ export default function SignInPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const { register, handleSubmit, getValues, formState: { errors } } = useForm<SignInFormValues>({
     resolver: zodResolver(signInSchema),
@@ -136,6 +141,16 @@ export default function SignInPage() {
         setIsLoading(false);
     }
   };
+
+  if (!isClient) {
+    return (
+        <div className="form-card">
+             <div className="flex justify-center items-center h-80">
+                <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            </div>
+        </div>
+    );
+  }
 
   return (
     <div className="form-card">
