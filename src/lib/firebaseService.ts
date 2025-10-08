@@ -91,6 +91,7 @@ export interface WalletTransaction {
     date: any; // serverTimestamp
     description: string;
     tripId?: string;
+    balanceAfter?: number;
 }
 
 
@@ -457,7 +458,8 @@ export const chargeWalletWithCode = async (
             type: 'charge',
             amount: amountToAdd,
             date: serverTimestamp(),
-            description: `تم شحن الرصيد بنجاح باستخدام الكود: ${chargeCode}`
+            description: `تم شحن الرصيد بنجاح باستخدام الكود: ${chargeCode}`,
+            balanceAfter: newBalance,
         });
         
         return {
@@ -569,9 +571,20 @@ export const addTrip = async (driverId: string, tripData: NewTripData, currentBa
         
         // 3. Deduct commission from wallet AFTER trip creation is successful
         const walletRef = ref(walletDatabaseInternal, `wallets/${driverId}`);
-        const newBalance = currentBalance - tripCommission;
-        await update(walletRef, { walletBalance: newBalance, updatedAt: serverTimestamp() });
+        const walletTxResult = await runTransaction(walletRef, (wallet) => {
+            if (wallet) {
+                wallet.walletBalance = (wallet.walletBalance || 0) - tripCommission;
+                wallet.updatedAt = serverTimestamp();
+            }
+            return wallet;
+        });
         
+        if (!walletTxResult.committed) {
+             throw new Error("فشل خصم العمولة من المحفظة.");
+        }
+        
+        const newBalance = walletTxResult.snapshot.val().walletBalance;
+
         // 4. Log the commission transaction
         await addWalletTransaction(driverId, {
             type: 'trip_fee',
@@ -579,6 +592,7 @@ export const addTrip = async (driverId: string, tripData: NewTripData, currentBa
             date: serverTimestamp(),
             description: `عمولة إنشاء رحلة جديدة رقم #${newTripReferenceNumber}`,
             tripId: newTripId,
+            balanceAfter: newBalance,
         });
 
         return fullTripData;
@@ -644,7 +658,7 @@ export const deleteTrip = async (tripId: string): Promise<void> => {
           if (txSnapshot.exists()) {
               const transactions = txSnapshot.val();
               let commissionTransaction: WalletTransaction | null = null;
-
+              
               // Client-side filtering to find the transaction
               for (const txId in transactions) {
                   if (transactions[txId].tripId === tripId && transactions[txId].type === 'trip_fee') {
@@ -656,20 +670,28 @@ export const deleteTrip = async (tripId: string): Promise<void> => {
               if (commissionTransaction) {
                   const refundAmount = Math.abs(commissionTransaction.amount);
 
-                  // Add refund transaction
-                  await addWalletTransaction(driverId, {
-                      type: 'refund',
-                      amount: refundAmount,
-                      date: serverTimestamp(),
-                      description: `استرداد عمولة لإلغاء رحلة #${trip.tripReferenceNumber}`,
-                      tripId: tripId,
+                  // Update wallet balance
+                  const walletRef = ref(walletDatabaseInternal, `wallets/${driverId}`);
+                  const walletTxResult = await runTransaction(walletRef, (wallet) => {
+                       if (wallet) {
+                           wallet.walletBalance = (wallet.walletBalance || 0) + refundAmount;
+                           wallet.updatedAt = serverTimestamp();
+                       }
+                       return wallet;
                   });
 
-                  // Update wallet balance
-                  const walletRef = ref(walletDatabaseInternal, `wallets/${driverId}/walletBalance`);
-                  await runTransaction(walletRef, (currentBalance) => {
-                      return (currentBalance || 0) + refundAmount;
-                  });
+                  if (walletTxResult.committed) {
+                      const newBalance = walletTxResult.snapshot.val().walletBalance;
+                       // Add refund transaction with new balance
+                      await addWalletTransaction(driverId, {
+                          type: 'refund',
+                          amount: refundAmount,
+                          date: serverTimestamp(),
+                          description: `استرداد عمولة لإلغاء رحلة #${trip.tripReferenceNumber}`,
+                          tripId: tripId,
+                          balanceAfter: newBalance,
+                      });
+                  }
               }
           }
       }
@@ -825,13 +847,26 @@ export const endTrip = async (tripToEnd: Trip, earnings: number): Promise<void> 
 
   // First, record the wallet transaction for trip earnings.
   if (earnings > 0 && walletDatabaseInternal) {
-    await addWalletTransaction(tripToEnd.driverId, {
-      type: 'trip_earning',
-      amount: earnings,
-      date: serverTimestamp(),
-      description: `أرباح من رحلة رقم ${tripToEnd.id}`,
-      tripId: tripToEnd.id,
+    const walletRef = ref(walletDatabaseInternal, `wallets/${tripToEnd.driverId}`);
+    const walletTxResult = await runTransaction(walletRef, (wallet) => {
+        if(wallet) {
+            wallet.walletBalance = (wallet.walletBalance || 0) + earnings;
+            wallet.updatedAt = serverTimestamp();
+        }
+        return wallet;
     });
+    
+    if (walletTxResult.committed) {
+        const newBalance = walletTxResult.snapshot.val().walletBalance;
+        await addWalletTransaction(tripToEnd.driverId, {
+          type: 'trip_earning',
+          amount: earnings,
+          date: serverTimestamp(),
+          description: `أرباح من رحلة #${tripToEnd.tripReferenceNumber}`,
+          tripId: tripToEnd.id,
+          balanceAfter: newBalance,
+        });
+    }
   }
 };
 

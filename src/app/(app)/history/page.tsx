@@ -176,8 +176,13 @@ function WalletTransactionsDialog({ isOpen, onOpenChange, transactions, isLoadin
                                           {tx.description}
                                           {tx.tripId && (
                                             <span className="block text-muted-foreground">
-                                              (رحلة: {tx.tripId.slice(-6)})
+                                              (رحلة: #{tx.tripId.slice(-6)})
                                             </span>
+                                          )}
+                                          {tx.balanceAfter !== undefined && (
+                                             <span className="block text-blue-600 font-medium pt-1">
+                                                الرصيد بعد الحركة: {tx.balanceAfter.toFixed(2)} د.أ
+                                             </span>
                                           )}
                                         </TableCell>
                                     </TableRow>
@@ -443,5 +448,6 @@ export default function HistoryPage() {
     </div>
   );
 }
+
 
 
