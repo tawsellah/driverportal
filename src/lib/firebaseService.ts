@@ -86,7 +86,7 @@ export interface UserProfile {
 
 export interface WalletTransaction {
     id: string;
-    type: 'charge' | 'trip_earning' | 'trip_fee' | 'system_adjustment' | 'refund';
+    type: 'charge' | 'trip_earning' | 'trip_fee' | 'system_adjustment' | 'refund' | 'deduct' | 'transfer';
     amount: number; // Positive for income, negative for outcome
     date: any; // serverTimestamp
     description: string;

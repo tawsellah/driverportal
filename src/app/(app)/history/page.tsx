@@ -126,6 +126,9 @@ const getTransactionTypeLabel = (type: WalletTransaction['type']) => {
         case 'trip_earning': return 'أرباح رحلة';
         case 'trip_fee': return 'رسوم رحلة';
         case 'system_adjustment': return 'تعديل من النظام';
+        case 'refund': return 'استرداد عمولة';
+        case 'deduct': return 'خصم';
+        case 'transfer': return 'تحويل بنكي';
         default: return 'حركة غير معروفة';
     }
 };
@@ -169,7 +172,14 @@ function WalletTransactionsDialog({ isOpen, onOpenChange, transactions, isLoadin
                                         <TableCell className={`text-center font-mono ${tx.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                             {tx.amount >= 0 ? `+${tx.amount.toFixed(2)}` : tx.amount.toFixed(2)}
                                         </TableCell>
-                                        <TableCell className="text-xs">{tx.description}</TableCell>
+                                        <TableCell className="text-xs">
+                                          {tx.description}
+                                          {tx.tripId && (
+                                            <span className="block text-muted-foreground">
+                                              (رحلة: {tx.tripId.slice(-6)})
+                                            </span>
+                                          )}
+                                        </TableCell>
                                     </TableRow>
                                 ))}
                             </TableBody>
@@ -433,4 +443,5 @@ export default function HistoryPage() {
     </div>
   );
 }
+
 
