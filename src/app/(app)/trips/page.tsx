@@ -87,16 +87,16 @@ function TripCard({
         return;
     }
     
-    if (Date.now() - tripCreationTime < FIVE_MINUTES_IN_MS) {
-      onDelete(trip.id);
-    } else {
+    // The 5-minute check is now handled inside fbDeleteTrip, but we can keep the toast here
+    if (Date.now() - tripCreationTime >= FIVE_MINUTES_IN_MS) {
       toast({
-        title: "لا يمكن إلغاء الرحلة",
-        description: "مر أكثر من 5 دقائق على إنشاء الرحلة. يرجى التواصل مع الدعم للإلغاء.",
-        variant: "destructive",
+        title: "سيتم إلغاء الرحلة بدون استرداد العمولة",
+        description: "مر أكثر من 5 دقائق على إنشاء الرحلة.",
+        variant: "default",
         duration: 5000,
       });
     }
+    onDelete(trip.id);
   };
 
   const handleEndTrip = () => {
@@ -239,7 +239,7 @@ function TripCard({
                 <AlertDialogHeader>
                   <AlertDialogTitle>هل أنت متأكد من إلغاء الرحلة؟</AlertDialogTitle>
                   <AlertDialogDescription>
-                    سيتم إشعار الركاب المسجلين بالإلغاء. لا يمكن التراجع عن هذا الإجراء إذا مر أكثر من 5 دقائق على إنشاء الرحلة.
+                    إذا تم الإلغاء خلال 5 دقائق من الإنشاء، سيتم تعويضك عن عمولة المقاعد الفارغة. بعد ذلك، لن يتم استرداد أي مبلغ.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -261,7 +261,7 @@ function TripCard({
                 <AlertDialogHeader>
                   <AlertDialogTitle>تأكيد إنهاء الرحلة</AlertDialogTitle>
                   <AlertDialogDescription>
-                    هل أنت متأكد أنك تريد إنهاء هذه الرحلة؟ سيتم نقلها إلى السجل وحساب الأرباح.
+                    سيتم نقل الرحلة إلى السجل وتعويضك عن عمولة المقاعد الفارغة. هل أنت متأكد؟
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -493,17 +493,9 @@ export default function TripsPage() {
 
   const handleEndTrip = async (tripToEnd: Trip) => {
      try {
-      let bookedSeatsCount = 0;
-      if (tripToEnd.offeredSeatsConfig) {
-        Object.values(tripToEnd.offeredSeatsConfig).forEach(seatValue => {
-          if (typeof seatValue === 'object' && seatValue !== null) {
-            bookedSeatsCount++;
-          }
-        });
-      }
-      const earnings = bookedSeatsCount * tripToEnd.pricePerPassenger;
-      await fbEndTrip(tripToEnd, earnings);
-      toast({ title: "تم إنهاء الرحلة بنجاح", description: `الأرباح: ${earnings.toFixed(2)} د.أ` });
+      // The earnings parameter is no longer needed
+      await fbEndTrip(tripToEnd);
+      toast({ title: "تم إنهاء الرحلة بنجاح" });
       fetchTripsData(true); 
     } catch (error) {
       console.error("Error ending trip:", error);
@@ -636,3 +628,4 @@ export default function TripsPage() {
     </div>
   );
 }
+
