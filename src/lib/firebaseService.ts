@@ -63,13 +63,15 @@ export interface UserProfile {
   idPhotoUrl?: string | null; 
   licenseNumber?: string;
   licenseExpiry?: string;
-  licensePhotoUrl?: string | null; 
+  licensePhotoUrl?: string | null;
+  introVideoUrl?: string | null;
   vehicleType?: string;
   otherVehicleType?: string | null;
   vehicleYear?: string;
   vehicleColor?: string;
   vehiclePlateNumber?: string;
   vehiclePhotosUrl?: string | null;
+  vehicleVideoUrl?: string | null;
   paymentMethods?: {
     click?: boolean;
     cash?: boolean;
@@ -851,7 +853,7 @@ export const getAllTripsForDriver = async (driverId: string): Promise<Trip[]> =>
 };
 
 
-export const endTrip = async (tripToEnd: Trip, earnings: number): Promise<void> => {
+export const endTrip = async (tripToEnd: Trip): Promise<void> => {
   if (!tripsDatabaseInternal) return;
   const currentTripRef = ref(tripsDatabaseInternal, `${CURRENT_TRIPS_PATH}/${tripToEnd.id}`);
   const finishedTripRef = ref(tripsDatabaseInternal, `${FINISHED_TRIPS_PATH}/${tripToEnd.id}`);
@@ -977,19 +979,5 @@ export const getDriverWhatsAppNumber = async (): Promise<string | null> => {
   }
   return null;
 };
-    
-    
 
     
-
-    
-
-
-
-    
-
-
-
-    
-
-
